@@ -1,3 +1,4 @@
+import { botMove, botIdOf, thinkDelayMs, personaById, personaOfBotId, type Persona, type PersonaId } from '../../shared/bot';
 import { createGame, currentPlayer, drawTurn, playTurn, removePlayer, MAX_TIMEOUTS, type GameState } from '../../shared/game';
 import type { SetState } from '../../shared/layout';
 import {
@@ -23,6 +24,8 @@ interface Stored {
   phase: 'lobby' | 'playing' | 'ended';
   lobby: { id: string; name: string }[];
   seats: Record<string, number>;
+  bots: Record<string, PersonaId>;
+  botAt: number | null;
   media: Record<string, { cam: boolean; mic: boolean }>;
   game: GameState | null;
   turnEndsAt: number | null;
@@ -57,6 +60,7 @@ export class GameRoom implements DurableObject {
   ) {
     this.loaded = ctx.blockConcurrencyWhile(async () => {
       this.s = (await ctx.storage.get<Stored>('s')) ?? null;
+      if (this.s) this.s.bots ??= {};
       this.photos = (await ctx.storage.get<Record<string, string>>('photos')) ?? {};
     });
   }
@@ -95,19 +99,21 @@ export class GameRoom implements DurableObject {
       id,
       name,
       seat: s.seats[id] ?? 0,
-      connected: online.has(id),
+      connected: online.has(id) || !!s.bots[id],
       cam: !!s.media[id]?.cam,
       mic: !!s.media[id]?.mic,
       isHost: s.hostId === id,
       rackCount: 0,
       melded: false,
       left: false,
+      bot: !!s.bots[id],
+      persona: s.bots[id],
       ...extra,
     });
     const players: RoomPlayer[] =
       s.phase === 'lobby' || !g
         ? s.lobby.map((p) => mk(p.id, p.name, {}))
-        : g.players.map((p) => mk(p.id, p.name, { rackCount: p.rack.length, melded: p.melded, left: p.left, connected: !p.left && p.connected }));
+        : g.players.map((p) => mk(p.id, p.name, { rackCount: p.rack.length, melded: p.melded, left: p.left, connected: !p.left && (p.connected || p.isBot) }));
     return {
       t: 'state',
       code: s.code,
@@ -175,7 +181,7 @@ export class GameRoom implements DurableObject {
       if (this.s) return new Response('exists', { status: 409 });
       const body = (await req.json()) as { code: string; turnSeconds: number; isPublic: boolean };
       const turnSeconds = (TURN_SECONDS_OPTIONS as readonly number[]).includes(body.turnSeconds) ? (body.turnSeconds as TurnSeconds) : 60;
-      this.s = { code: body.code, hostId: '', turnSeconds, isPublic: !!body.isPublic, phase: 'lobby', lobby: [], seats: {}, media: {}, game: null, turnEndsAt: null, recorded: false };
+      this.s = { code: body.code, hostId: '', turnSeconds, isPublic: !!body.isPublic, phase: 'lobby', lobby: [], seats: {}, bots: {}, botAt: null, media: {}, game: null, turnEndsAt: null, recorded: false };
       await this.persist();
       await this.ctx.storage.setAlarm(Date.now() + IDLE_ROOM_MS);
       return new Response('ok');
@@ -212,7 +218,7 @@ export class GameRoom implements DurableObject {
         if (me !== s.hostId || s.phase !== 'lobby') return;
         if (s.lobby.length < 2) return this.err(ws, 'São necessários pelo menos 2 jogadores.');
         const order = [...s.lobby].sort((a, b) => (s.seats[a.id] ?? 0) - (s.seats[b.id] ?? 0));
-        s.game = createGame(order.map((p) => ({ id: p.id, name: p.name })), Math.random);
+        s.game = createGame(order.map((p) => ({ id: p.id, name: p.name, isBot: !!s.bots[p.id] })), Math.random);
         s.phase = 'playing';
         await this.afterGameChange(s.game);
         return;
@@ -223,6 +229,27 @@ export class GameRoom implements DurableObject {
         await this.persist();
         this.broadcast();
         await this.listing();
+        return;
+      }
+      case 'addBot': {
+        if (me !== s.hostId || s.phase !== 'lobby') return;
+        const persona = personaById(String(msg.persona));
+        if (!persona) return;
+        const id = botIdOf(persona.id);
+        if (s.bots[id]) return this.err(ws, `${persona.name} já está na sala.`);
+        if (s.lobby.length >= MAX_ROOM_PLAYERS) return this.err(ws, 'Sala cheia.');
+        s.lobby.push({ id, name: persona.name });
+        s.bots[id] = persona.id;
+        const used = new Set(Object.values(s.seats));
+        s.seats[id] = SEAT_PREFERENCE.find((x) => !used.has(x)) ?? 0;
+        await this.persist();
+        this.broadcast();
+        await this.listing();
+        return;
+      }
+      case 'removeBot': {
+        if (me !== s.hostId || s.phase !== 'lobby' || !s.bots[msg.id]) return;
+        await this.dropPlayer(msg.id);
         return;
       }
       case 'seat': {
@@ -367,7 +394,7 @@ export class GameRoom implements DurableObject {
         await this.ctx.storage.setAlarm(limit);
       }
     }
-    if (s.hostId === id) s.hostId = s.game?.players.find((p) => !p.left && p.connected)?.id ?? s.hostId;
+    if (s.hostId === id) s.hostId = s.game?.players.find((p) => !p.left && !p.isBot && p.connected)?.id ?? s.hostId;
     if (this.online().size === 0 && s.phase === 'ended') return this.destroy();
     await this.persist();
     this.broadcast();
@@ -381,9 +408,10 @@ export class GameRoom implements DurableObject {
     if (s.phase === 'lobby') {
       s.lobby = s.lobby.filter((p) => p.id !== id);
       delete s.seats[id];
+      delete s.bots[id];
       delete this.photos[id];
-      if (s.hostId === id) s.hostId = s.lobby[0]?.id ?? '';
-      if (s.lobby.length === 0) return this.destroy();
+      if (s.hostId === id) s.hostId = s.lobby.find((p) => !s.bots[p.id])?.id ?? '';
+      if (!s.lobby.some((p) => !s.bots[p.id])) return this.destroy();
       await this.ctx.storage.put('photos', this.photos);
       await this.persist();
       this.broadcast();
@@ -391,7 +419,7 @@ export class GameRoom implements DurableObject {
       return;
     }
     if (s.phase === 'playing' && s.game) {
-      if (s.hostId === id) s.hostId = s.game.players.find((p) => !p.left && p.id !== id && this.online().has(p.id))?.id ?? s.hostId;
+      if (s.hostId === id) s.hostId = s.game.players.find((p) => !p.left && !p.isBot && p.id !== id && this.online().has(p.id))?.id ?? s.hostId;
       await this.afterGameChange(removePlayer(s.game, id));
     }
   }
@@ -407,6 +435,17 @@ export class GameRoom implements DurableObject {
       await this.listing();
     } else {
       const cur = currentPlayer(g);
+      if (cur.isBot) {
+        // o bot "pensa" uma parte do tempo do turno; o relógio mostrado é o do turno inteiro, como para humanos
+        s.botAt = Date.now() + thinkDelayMs(personaOfBotId(cur.id) ?? personaById('luna')!, s.turnSeconds);
+        s.turnEndsAt = Date.now() + s.turnSeconds * 1000;
+        await this.ctx.storage.setAlarm(s.botAt);
+        await this.listing();
+        await this.persist();
+        this.broadcast();
+        return;
+      }
+      s.botAt = null;
       const secs = cur.connected ? s.turnSeconds : Math.min(s.turnSeconds, OFFLINE_TURN_SECONDS);
       s.turnEndsAt = Date.now() + secs * 1000;
       await this.ctx.storage.setAlarm(s.turnEndsAt);
@@ -422,7 +461,7 @@ export class GameRoom implements DurableObject {
     s.recorded = true;
     // anti-farm: partidas relâmpago (alguém saiu logo no começo) não entram no ranking
     if (g.turnNo < g.players.length * 3 && g.result.reason !== 'empty') return;
-    const entries: RecordEntry[] = g.players.map((p) => ({ id: p.id, name: p.name, points: g.result!.points[p.id] ?? 0, won: g.result!.winners.includes(p.id) }));
+    const entries: RecordEntry[] = g.players.filter((p) => !p.isBot).map((p) => ({ id: p.id, name: p.name, points: g.result!.points[p.id] ?? 0, won: g.result!.winners.includes(p.id) }));
     try {
       await this.env.RANKING.get(this.env.RANKING.idFromName('global')).fetch('https://ranking/record', { method: 'POST', body: JSON.stringify(entries) });
     } catch {
@@ -439,6 +478,14 @@ export class GameRoom implements DurableObject {
       return;
     }
     if (s.phase !== 'playing' || !s.game) return;
+    if (currentPlayer(s.game).isBot) {
+      const at = s.botAt ?? 0;
+      if (Date.now() < at - 100) {
+        await this.ctx.storage.setAlarm(at);
+        return;
+      }
+      return this.botTurn();
+    }
     if (Date.now() < (s.turnEndsAt ?? 0) - 100) {
       await this.ctx.storage.setAlarm(s.turnEndsAt!);
       return;
@@ -449,5 +496,23 @@ export class GameRoom implements DurableObject {
     let g = step.state;
     if (g.players.find((p) => p.id === cur.id)!.timeouts >= MAX_TIMEOUTS) g = removePlayer(g, cur.id);
     await this.afterGameChange(g);
+  }
+
+  private async botTurn(): Promise<void> {
+    const s = this.s!;
+    const g = s.game!;
+    const cur = currentPlayer(g);
+    const persona: Persona = personaOfBotId(cur.id) ?? personaById('luna')!;
+    const table = botMove(g, persona);
+    let step = table ? playTurn(g, cur.id, table) : null;
+    const played = !!step && step.ok;
+    if (!step || !step.ok) step = drawTurn(g, cur.id);
+    if (!step.ok) return;
+    if (Math.random() < 0.4) {
+      const pool = played ? persona.lines.play : persona.lines.draw;
+      const text = pool[Math.floor(Math.random() * pool.length)]!;
+      for (const ws of this.online().values()) this.send(ws, { t: 'say', id: cur.id, text });
+    }
+    await this.afterGameChange(step.state);
   }
 }

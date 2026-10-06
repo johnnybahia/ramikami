@@ -109,3 +109,94 @@ export function validatePlay(prevTable: readonly SetState[], rack: readonly numb
   }
   return { ok: true, added, meldPoints };
 }
+
+export type ArrangeResult = { ok: true; sets: number[][]; points: number } | { ok: false; reason: string };
+
+/** Ordena um subconjunto de pedras num set válido (melhor pontuação), ou null. */
+function orderSet(tiles: readonly number[]): number[] | null {
+  const jokers = tiles.filter(isJoker);
+  const plain = tiles.filter((t) => !isJoker(t));
+  if (tiles.length < 3 || plain.length === 0) return null;
+  let best: number[] | null = null;
+  let bestPts = -1;
+  const consider = (arr: number[]): void => {
+    const info = analyzeSet(arr);
+    if (info.valid && info.points > bestPts) {
+      best = arr;
+      bestPts = info.points;
+    }
+  };
+  if (new Set(plain.map(tileNum)).size === 1) consider([...plain].sort((a, b) => tileColor(a) - tileColor(b)).concat(jokers));
+  if (new Set(plain.map(tileColor)).size === 1) {
+    const sorted = [...plain].sort((a, b) => tileNum(a) - tileNum(b));
+    const lo = tileNum(sorted[0]!);
+    const hi = tileNum(sorted[sorted.length - 1]!);
+    const byNum = new Map(sorted.map((t) => [tileNum(t), t]));
+    if (byNum.size === sorted.length) {
+      const body: number[] = [];
+      let j = 0;
+      let ok = true;
+      for (let n = lo; n <= hi; n++) {
+        const t = byNum.get(n);
+        if (t !== undefined) body.push(t);
+        else if (j < jokers.length) body.push(jokers[j++]!);
+        else ok = false;
+      }
+      if (ok) {
+        const extra = jokers.slice(j);
+        consider(body.concat(extra));
+        consider(extra.concat(body));
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Divide TODAS as pedras dadas em conjuntos válidos (sequências/trincas), maximizando pontos.
+ * Na abertura (melded = false) exige MELD_MIN pontos. Cada coringa só pode estar em uma pedra marcada (máx. 1).
+ */
+export function arrangeTiles(ids: readonly number[], melded: boolean): ArrangeResult {
+  const n = ids.length;
+  if (n < 3) return { ok: false, reason: 'marque ao menos 3 pedras' };
+  if (n > 20) return { ok: false, reason: 'pedras demais' };
+  if (new Set(ids).size !== n) return { ok: false, reason: 'pedra repetida' };
+  if (ids.filter(isJoker).length > 1) return { ok: false, reason: 'marque no máximo 1 coringa' };
+  const full = (1 << n) - 1;
+  const memo = new Map<number, { pts: number; sets: number[][] } | null>();
+  const subsetOf = (mask: number): number[] => ids.filter((_, i) => mask & (1 << i));
+  const solve = (mask: number): { pts: number; sets: number[][] } | null => {
+    if (mask === 0) return { pts: 0, sets: [] };
+    if (memo.has(mask)) return memo.get(mask)!;
+    const low = mask & -mask;
+    const rest = mask ^ low;
+    let best: { pts: number; sets: number[][] } | null = null;
+    for (let sub = rest; ; sub = (sub - 1) & rest) {
+      const m = sub | low;
+      const count = popcount(m);
+      if (count >= 3 && count <= 13) {
+        const ordered = orderSet(subsetOf(m));
+        if (ordered) {
+          const tail = solve(mask ^ m);
+          if (tail) {
+            const pts = analyzeSet(ordered).points + tail.pts;
+            if (!best || pts > best.pts) best = { pts, sets: [ordered, ...tail.sets] };
+          }
+        }
+      }
+      if (sub === 0) break;
+    }
+    memo.set(mask, best);
+    return best;
+  };
+  const res = solve(full);
+  if (!res) return { ok: false, reason: 'essas pedras não formam jogadas válidas juntas' };
+  if (!melded && res.pts < MELD_MIN) return { ok: false, reason: `abertura precisa de ${MELD_MIN} pontos (você tem ${res.pts})` };
+  return { ok: true, sets: res.sets, points: res.pts };
+}
+
+function popcount(x: number): number {
+  let c = 0;
+  for (; x; x &= x - 1) c++;
+  return c;
+}

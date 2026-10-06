@@ -9,6 +9,12 @@ const FILES = __FILES__; // [{ url, hash }]
 const CACHE = `ramikami-${VERSION}`;
 const PREFIX = 'ramikami-';
 
+/** Resposta vinda de redirecionamento não pode ser usada em navegação: recria uma limpa. */
+async function clean(res) {
+  if (!res || !res.redirected) return res;
+  return new Response(await res.blob(), { status: 200, statusText: 'OK', headers: res.headers });
+}
+
 const keyOf = (f) => `${BASE}${f.url}?v=${f.hash}`;
 
 async function broadcast(msg) {
@@ -44,7 +50,7 @@ async function precache() {
       if (!hit) {
         const res = await fetch(`${BASE}${f.url}`, { cache: 'no-store' });
         if (!res.ok) throw new Error(`falha ao baixar ${f.url}`);
-        await cache.put(key, res);
+        await cache.put(key, await clean(res));
       }
       done++;
       broadcast({ type: 'progress', done, total, fresh });
@@ -54,7 +60,19 @@ async function precache() {
 }
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(precache());
+  e.waitUntil(
+    (async () => {
+      await precache();
+      // conserta quem ficou com uma versão antiga quebrada (index.html salvo como redirecionamento): assume já
+      const shell = FILES.find((f) => f.url === 'index.html');
+      for (const k of await caches.keys()) {
+        if (!k.startsWith(PREFIX) || k === CACHE) continue;
+        const oc = await caches.open(k);
+        for (const r of await oc.matchAll()) if (r.redirected) return self.skipWaiting();
+        if (shell && !(await oc.match(keyOf(shell)))) return self.skipWaiting();
+      }
+    })(),
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -102,13 +120,13 @@ self.addEventListener('fetch', (e) => {
       if (req.mode === 'navigate') {
         const shell = FILES.find((f) => f.url === 'index.html');
         const hit = shell && (await cache.match(keyOf(shell)));
-        if (hit) return hit;
+        if (hit) return clean(hit);
         return fetch(req);
       }
       const f = byUrl.get(url.pathname);
       if (f) {
         const hit = await cache.match(keyOf(f));
-        if (hit) return hit;
+        if (hit) return clean(hit);
       }
       return fetch(req);
     })(),

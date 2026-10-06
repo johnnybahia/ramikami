@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeSet, validatePlay } from './rules';
+import { analyzeSet, arrangeTiles, validatePlay } from './rules';
 import { createGame, drawTurn, playTurn, removePlayer, currentPlayer } from './game';
-import { botMove } from './bot';
+import { botMove, PERSONAS } from './bot';
+import { solveTable } from './solver';
 import { mulberry32, handPoints } from './tiles';
 import type { SetState } from './layout';
 
@@ -111,6 +112,48 @@ describe('game', () => {
       expect(g.result!.winners.length).toBeGreaterThan(0);
       const min = Math.min(...g.players.map((p) => handPoints(p.rack)));
       expect(g.result!.winners.every((w) => handPoints(g.players.find((p) => p.id === w)!.rack) === min)).toBe(true);
+    }
+  });
+});
+
+describe('arrangeTiles', () => {
+  it('divide em sequência + trinca', () => {
+    const r = arrangeTiles([T(0, 4), T(0, 5), T(0, 6), T(0, 7), T(1, 9), T(2, 9), T(3, 9)], true);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.sets.map((s) => s.length).sort()).toEqual([3, 4]);
+  });
+  it('coringa preenche lacuna', () => {
+    const r = arrangeTiles([T(0, 4), J1, T(0, 6)], true);
+    expect(r).toMatchObject({ ok: true, points: 15 });
+  });
+  it('rejeita 2 coringas, sobra de pedra e abertura < 30', () => {
+    expect(arrangeTiles([T(0, 4), J1, J2], true).ok).toBe(false);
+    expect(arrangeTiles([T(0, 4), T(0, 5), T(0, 6), T(2, 13)], true).ok).toBe(false);
+    expect(arrangeTiles([T(0, 4), T(0, 5), T(0, 6)], false).ok).toBe(false);
+    expect(arrangeTiles([T(0, 10), T(0, 11), T(0, 12)], false).ok).toBe(true);
+  });
+});
+
+describe('bots e solucionador', () => {
+  it('rearranja a mesa para colocar pedras (tira o 8 da sequência para formar trinca)', () => {
+    const table = [S(1, [T(0, 5), T(0, 6), T(0, 7), T(0, 8)], 0, 0)];
+    const rack = [T(1, 8), T(2, 8), T(3, 1)];
+    const r = solveTable(table, rack, 20000);
+    expect(r).not.toBeNull();
+    expect(validatePlay(table, rack, true, r!.table).ok).toBe(true);
+    expect(r!.placed).toBe(2);
+  });
+  it('cada personalidade devolve jogada válida ou null, dentro do orçamento de CPU', () => {
+    for (const persona of PERSONAS) {
+      let worst = 0;
+      for (let seed = 1; seed <= 30; seed++) {
+        const g = createGame([{ id: 'a', name: 'A', isBot: true }, { id: 'b', name: 'B' }], mulberry32(seed));
+        const t0 = performance.now();
+        const m = botMove({ ...g, turn: 0 }, persona, mulberry32(seed));
+        worst = Math.max(worst, performance.now() - t0);
+        if (m) expect(validatePlay(g.table, g.players[0]!.rack, g.players[0]!.melded, m).ok).toBe(true);
+      }
+      console.log(persona.name, 'pior caso ms:', worst.toFixed(1));
     }
   });
 });

@@ -98,6 +98,20 @@ export function dropNew(d: Draft, id: number, x: number, z: number): Draft | nul
   return n;
 }
 
+/** Coloca vários conjuntos prontos (só com pedras do cavalete) na mesa de uma vez. */
+export function placeSets(d: Draft, sets: readonly (readonly number[])[]): Draft | null {
+  const n = cloneDraft(d);
+  for (const tiles of sets) {
+    if (!tiles.every((t) => inRack(n, t))) return null;
+    for (const t of tiles) detach(n, t);
+    const spot = findSpot(n.table, -1, 0, 0, tiles.length);
+    if (!spot) return null;
+    n.table.push({ id: nextId(n), tiles: tiles.slice(), x: spot.x, z: spot.z });
+    for (const t of tiles) n.placed.add(t);
+  }
+  return n;
+}
+
 export function splitSet(d: Draft, setId: number, index: number): Draft | null {
   const s = d.table.find((x) => x.id === setId);
   if (!s || index <= 0 || index >= s.tiles.length) return null;
