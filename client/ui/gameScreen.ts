@@ -64,6 +64,8 @@ export class GameScreen {
   private undo: Draft[] = [];
   private selected = new Set<number>();
   private btnPlaySel!: HTMLButtonElement;
+  private btnCam!: HTMLButtonElement;
+  private btnMic!: HTMLButtonElement;
   private mode: Mode = 'tile';
   private remoteDraft: SetState[] | null = null;
   private photos = new Map<string, string>();
@@ -521,6 +523,8 @@ export class GameScreen {
       ['split', '✂', 'Dividir conjunto (toque na pedra onde cortar)'],
       ['pick', '☑', 'Marcar pedras do cavalete para jogar de uma vez'],
     ];
+    this.btnCam = mk('📷', 'Mostrar minha imagem ao vivo no lugar da foto', () => void this.toggleMedia('cam'));
+    this.btnMic = mk('🎤', 'Microfone', () => void this.toggleMedia('mic'));
     const modes = h('div', { class: 'modes' });
     for (const [m, label, title] of modeDefs) {
       const b = mk(label, title, () => {
@@ -535,7 +539,7 @@ export class GameScreen {
     this.btnPlaySel = h('button', { class: 'btn confirm hidden', attrs: { type: 'button' }, on: { click: () => this.playSelected() } });
     this.btnDraw = h('button', { class: 'btn draw', text: 'Comprar', attrs: { type: 'button' }, on: { click: () => this.requestDraw() } });
     this.btnConfirm = h('button', { class: 'btn confirm', text: 'Confirmar', attrs: { type: 'button' }, on: { click: () => this.doConfirm() } });
-    const left = h('div', { class: 'tools' }, this.btnUndo, this.btnReset, sortNum, sortCol, modes);
+    const left = h('div', { class: 'tools' }, this.btnUndo, this.btnReset, sortNum, sortCol, modes, ...(this.b.mode === 'online' ? [this.btnCam, this.btnMic] : []));
     const right = h('div', { class: 'mainact' }, this.btnPlaySel, this.btnDraw, this.btnConfirm);
     this.actionbar.append(left, right);
     this.root.append(this.statusEl);
@@ -551,6 +555,11 @@ export class GameScreen {
     this.btnUndo.disabled = !mine || this.undo.length === 0;
     this.btnReset.disabled = !mine || !isDirty(d);
     this.btnDraw.disabled = !mine;
+    const me = this.me();
+    this.btnCam.classList.toggle('active', !!me?.cam);
+    this.btnMic.classList.toggle('active', !!me?.mic);
+    this.btnCam.textContent = me?.cam ? '📷' : '🚫';
+    this.btnMic.textContent = me?.mic ? '🎤' : '🔇';
     this.btnPlaySel.classList.toggle('hidden', !mine || this.mode !== 'pick' || this.selected.size < 3);
     this.btnPlaySel.textContent = `Jogar marcadas (${this.selected.size})`;
     this.btnDraw.textContent = v.poolCount === 0 ? 'Passar' : 'Comprar';
