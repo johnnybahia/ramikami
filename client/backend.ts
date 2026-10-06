@@ -1,10 +1,11 @@
 import type { SetState } from '../shared/layout';
-import type { BotLevel, RoomView, TurnSeconds } from '../shared/protocol';
+import type { PersonaId, RoomView, TurnSeconds } from '../shared/protocol';
 
 export interface BackendEvents {
   onView(v: RoomView): void;
   onDraft(from: string, table: SetState[]): void;
   onPhoto(id: string, data: string): void;
+  onSay(id: string, text: string): void;
   onError(msg: string): void;
   onKicked(): void;
   onRtc(from: string, data: unknown): void;
@@ -23,7 +24,7 @@ export interface Backend {
   seat(id: string, seat: number): void;
   settings(turnSeconds: TurnSeconds): void;
   kick(id: string): void;
-  addBot(level: BotLevel): void;
+  addBot(persona: PersonaId): void;
   removeBot(id: string): void;
   media(cam: boolean, mic: boolean): void;
   rtc(to: string, data: unknown): void;
@@ -34,6 +35,7 @@ export const noopEvents: BackendEvents = {
   onView() {},
   onDraft() {},
   onPhoto() {},
+  onSay() {},
   onError() {},
   onKicked() {},
   onRtc() {},

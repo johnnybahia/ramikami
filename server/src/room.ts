@@ -1,4 +1,4 @@
-import { botMove, BOT_LEVELS, type BotLevel } from '../../shared/bot';
+import { botMove, botIdOf, thinkDelayMs, personaById, personaOfBotId, type Persona, type PersonaId } from '../../shared/bot';
 import { createGame, currentPlayer, drawTurn, playTurn, removePlayer, MAX_TIMEOUTS, type GameState } from '../../shared/game';
 import type { SetState } from '../../shared/layout';
 import {
@@ -24,7 +24,7 @@ interface Stored {
   phase: 'lobby' | 'playing' | 'ended';
   lobby: { id: string; name: string }[];
   seats: Record<string, number>;
-  bots: Record<string, BotLevel>;
+  bots: Record<string, PersonaId>;
   botAt: number | null;
   media: Record<string, { cam: boolean; mic: boolean }>;
   game: GameState | null;
@@ -107,7 +107,7 @@ export class GameRoom implements DurableObject {
       melded: false,
       left: false,
       bot: !!s.bots[id],
-      botLevel: s.bots[id],
+      persona: s.bots[id],
       ...extra,
     });
     const players: RoomPlayer[] =
@@ -233,13 +233,13 @@ export class GameRoom implements DurableObject {
       }
       case 'addBot': {
         if (me !== s.hostId || s.phase !== 'lobby') return;
-        if (!BOT_LEVELS.includes(msg.level)) return;
+        const persona = personaById(String(msg.persona));
+        if (!persona) return;
+        const id = botIdOf(persona.id);
+        if (s.bots[id]) return this.err(ws, `${persona.name} já está na sala.`);
         if (s.lobby.length >= MAX_ROOM_PLAYERS) return this.err(ws, 'Sala cheia.');
-        const id = `bot-${crypto.randomUUID().slice(0, 8)}`;
-        const n = Object.keys(s.bots).length + 1;
-        const label = { easy: 'Fácil', normal: 'Médio', hard: 'Difícil' }[msg.level];
-        s.lobby.push({ id, name: `Bot ${n} ${label}`.slice(0, NAME_MAX) });
-        s.bots[id] = msg.level;
+        s.lobby.push({ id, name: persona.name });
+        s.bots[id] = persona.id;
         const used = new Set(Object.values(s.seats));
         s.seats[id] = SEAT_PREFERENCE.find((x) => !used.has(x)) ?? 0;
         await this.persist();
@@ -436,8 +436,9 @@ export class GameRoom implements DurableObject {
     } else {
       const cur = currentPlayer(g);
       if (cur.isBot) {
-        s.botAt = Date.now() + 1500 + Math.floor(Math.random() * 1500);
-        s.turnEndsAt = s.botAt;
+        // o bot "pensa" uma parte do tempo do turno; o relógio mostrado é o do turno inteiro, como para humanos
+        s.botAt = Date.now() + thinkDelayMs(personaOfBotId(cur.id) ?? personaById('luna')!, s.turnSeconds);
+        s.turnEndsAt = Date.now() + s.turnSeconds * 1000;
         await this.ctx.storage.setAlarm(s.botAt);
         await this.listing();
         await this.persist();
@@ -501,9 +502,17 @@ export class GameRoom implements DurableObject {
     const s = this.s!;
     const g = s.game!;
     const cur = currentPlayer(g);
-    const table = botMove(g, s.bots[cur.id] ?? 'normal');
+    const persona: Persona = personaOfBotId(cur.id) ?? personaById('luna')!;
+    const table = botMove(g, persona);
     let step = table ? playTurn(g, cur.id, table) : null;
+    const played = !!step && step.ok;
     if (!step || !step.ok) step = drawTurn(g, cur.id);
-    if (step.ok) await this.afterGameChange(step.state);
+    if (!step.ok) return;
+    if (Math.random() < 0.4) {
+      const pool = played ? persona.lines.play : persona.lines.draw;
+      const text = pool[Math.floor(Math.random() * pool.length)]!;
+      for (const ws of this.online().values()) this.send(ws, { t: 'say', id: cur.id, text });
+    }
+    await this.afterGameChange(step.state);
   }
 }

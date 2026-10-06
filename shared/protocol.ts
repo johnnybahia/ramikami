@@ -1,8 +1,8 @@
 import type { GameResult } from './game';
 import type { SetState } from './layout';
-import type { BotLevel } from './bot';
+import type { PersonaId } from './bot';
 
-export type { BotLevel };
+export type { PersonaId };
 
 export const MAX_ROOM_PLAYERS = 4;
 export const TURN_SECONDS_OPTIONS = [30, 60] as const;
@@ -25,7 +25,7 @@ export interface RoomPlayer {
   melded: boolean;
   left: boolean;
   bot: boolean;
-  botLevel?: BotLevel;
+  persona?: PersonaId;
 }
 
 export interface RoomView {
@@ -58,7 +58,7 @@ export type ClientMsg =
   | { t: 'media'; cam: boolean; mic: boolean }
   | { t: 'rtc'; to: string; data: unknown }
   | { t: 'kick'; id: string }
-  | { t: 'addBot'; level: BotLevel }
+  | { t: 'addBot'; persona: PersonaId }
   | { t: 'removeBot'; id: string }
   | { t: 'leave' }
   | { t: 'ping' };
@@ -66,6 +66,7 @@ export type ClientMsg =
 export type ServerMsg =
   | RoomView
   | { t: 'photo'; id: string; data: string }
+  | { t: 'say'; id: string; text: string }
   | { t: 'draft'; from: string; table: SetState[] }
   | { t: 'rtc'; from: string; data: unknown }
   | { t: 'error'; msg: string }
