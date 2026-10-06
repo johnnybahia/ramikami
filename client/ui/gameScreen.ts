@@ -20,6 +20,8 @@ import {
 } from '../game/draft';
 import { analyzeSet, arrangeTiles } from '../../shared/rules';
 import { isJoker } from '../../shared/tiles';
+import { PERSONAS, botIdOf, personaOfBotId } from '../../shared/bot';
+import { personaAvatar } from '../botAvatars';
 import { relayout, type SetState } from '../../shared/layout';
 import { TURN_SECONDS_OPTIONS, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
 import { applyUpdate, onPwa, type PwaState } from '../pwa';
@@ -132,6 +134,10 @@ export class GameScreen {
       this.renderBoxes();
     };
     ev.onError = (m) => toast(m);
+    ev.onSay = (id, text) => {
+      const who = this.view?.players.find((p) => p.id === id)?.name ?? '';
+      toast(`${who}: “${text}”`, 2400);
+    };
     ev.onKicked = () => {
       toast('Você saiu da sala.');
       this.teardown();
@@ -512,7 +518,8 @@ export class GameScreen {
       box.el.className = `pbox pos-${rel}${v.turnId === p.id ? ' turn' : ''}${p.connected ? '' : ' offline'}${p.id === meId ? ' me' : ''}`;
       box.name.textContent = `${p.isHost ? '♛ ' : ''}${p.name}`;
       box.meta.textContent = v.phase === 'lobby' ? (p.connected ? '' : 'offline') : `${p.rackCount} pedras${p.melded ? ' · abriu' : ''}`;
-      const photo = this.photos.get(p.id) ?? null;
+      const bp = personaOfBotId(p.id);
+      const photo = this.photos.get(p.id) ?? (bp ? personaAvatar(bp.id) : null);
       const key = `${p.name}|${photo ? photo.length : 0}`;
       if (key !== box.avatarKey) {
         box.avatarKey = key;
@@ -636,7 +643,28 @@ export class GameScreen {
   private lobbyPanel(v: RoomView): HTMLElement {
     const host = v.hostId === v.you;
     const list = h('ul', { class: 'plist' });
-    for (const p of v.players) list.append(h('li', { text: `${p.isHost ? '♛ ' : ''}${p.name}${p.id === v.you ? ' (você)' : ''}${p.connected ? '' : ' · offline'}` }));
+    for (const p of v.players) {
+      const li = h('li', { text: `${p.isHost ? '♛ ' : ''}${p.bot ? '🤖 ' : ''}${p.name}${p.id === v.you ? ' (você)' : ''}${p.connected ? '' : ' · offline'}` });
+      if (host && p.bot) li.append(' ', btn('×', () => this.b.removeBot(p.id), 'ghost small'));
+      list.append(li);
+    }
+    const free = PERSONAS.filter((p) => !v.players.some((x) => x.id === botIdOf(p.id)));
+    const botRow =
+      host && v.players.length < 4 && free.length > 0
+        ? h(
+            'div',
+            { class: 'bots' },
+            h('p', { class: 'muted', text: 'Adicionar bot (cada um joga de um jeito)' }),
+            ...free.map((p) =>
+              h(
+                'button',
+                { class: 'room bot-pick', attrs: { type: 'button', title: p.blurb }, on: { click: () => this.b.addBot(p.id) } },
+                h('img', { class: 'avatar', attrs: { src: personaAvatar(p.id), alt: p.name } }),
+                h('span', {}, h('b', { text: `${p.name} · ${p.level}` }), h('small', { class: 'muted', text: p.blurb })),
+              ),
+            ),
+          )
+        : null;
     const seg = h('div', { class: 'seg' });
     for (const s of TURN_SECONDS_OPTIONS) {
       seg.append(
@@ -660,6 +688,7 @@ export class GameScreen {
       h('p', { class: 'muted', text: `${v.players.length}/4 jogadores · tempo por jogada` }),
       seg,
       list,
+      botRow,
       h('div', { class: 'row' }, btn('Convidar', () => void this.shareRoom())),
       h(
         'div',

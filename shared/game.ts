@@ -132,7 +132,7 @@ export function removePlayer(state: GameState, playerId: string): GameState {
   if (idx < 0 || s.players[idx]!.left) return state;
   s.players[idx]!.left = true;
   s.players[idx]!.connected = false;
-  if (activePlayers(s).length <= 1) {
+  if (activePlayers(s).length <= 1 || activePlayers(s).every((p) => p.isBot)) {
     finish(s, 'left');
   } else if (s.turn === idx) {
     advance(s);

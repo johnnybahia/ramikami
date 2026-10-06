@@ -2,7 +2,7 @@ import type { Backend, BackendEvents } from '../backend';
 import { noopEvents } from '../backend';
 import { wsUrl } from '../api';
 import type { SetState } from '../../shared/layout';
-import type { ClientMsg, ServerMsg, TurnSeconds } from '../../shared/protocol';
+import type { PersonaId, ClientMsg, ServerMsg, TurnSeconds } from '../../shared/protocol';
 import type { Profile } from '../store';
 
 export class OnlineBackend implements Backend {
@@ -44,6 +44,9 @@ export class OnlineBackend implements Backend {
           break;
         case 'photo':
           this.events.onPhoto(m.id, m.data);
+          break;
+        case 'say':
+          this.events.onSay(m.id, m.text);
           break;
         case 'draft':
           this.events.onDraft(m.from, m.table);
@@ -94,6 +97,12 @@ export class OnlineBackend implements Backend {
   }
   settings(turnSeconds: TurnSeconds): void {
     this.send({ t: 'settings', turnSeconds });
+  }
+  addBot(persona: PersonaId): void {
+    this.send({ t: 'addBot', persona });
+  }
+  removeBot(id: string): void {
+    this.send({ t: 'removeBot', id });
   }
   kick(id: string): void {
     this.send({ t: 'kick', id });
