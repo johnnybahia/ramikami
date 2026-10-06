@@ -29,7 +29,7 @@ import { a11yPanel, modal } from './screens';
 import { relayout, type SetState } from '../../shared/layout';
 import { BEST_OF_OPTIONS, BOT_TURN_SECONDS, animMsFor, TURN_SECONDS_OPTIONS, turnLabel, type BestOf, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
 import { applyUpdate, checkForUpdate, onPwa, type PwaState } from '../pwa';
-import { avatarColor, loadA11y, type Profile } from '../store';
+import { avatarColor, loadA11y, saveA11y, type Profile } from '../store';
 import { avatarEl, btn, clear, h, toast } from './dom';
 
 interface PBox {
@@ -302,6 +302,7 @@ export class GameScreen {
 
   /** Um bot comenta a jogada que acabou de acontecer (só visual, aparece depois da animação). */
   private botChatter(prev: RoomView, v: RoomView): void {
+    if (!loadA11y().chat) return;
     const moverId = prev.turnId;
     if (!moverId) return;
     const before = prev.players.find((p) => p.id === moverId);
@@ -536,6 +537,15 @@ export class GameScreen {
         ...(online ? [item(me?.cam ? '📷' : '🚫', me?.cam ? 'Câmera ligada' : 'Ligar câmera', () => void this.toggleMedia('cam'))] : []),
         ...(online ? [item(me?.mic ? '🎤' : '🔇', me?.mic ? 'Microfone ligado' : 'Ligar microfone', () => void this.toggleMedia('mic'))] : []),
         item('Aa', 'Visual e mesa', () => a11yPanel((a) => { this.scene.setContrast(a.contrast); this.scene.setSize(a.size); this.scene.setSkin(a.skin); })),
+        item(loadA11y().chat ? '💬' : '🔕', loadA11y().chat ? 'Falas dos bots: ligadas' : 'Falas dos bots: desligadas', () => {
+          const on = !loadA11y().chat;
+          saveA11y({ ...loadA11y(), chat: on });
+          if (!on) {
+            window.clearTimeout(this.chatTimer);
+            this.chatBubble.classList.add('hidden');
+          }
+          toast(on ? 'Falas dos bots ligadas.' : 'Falas dos bots desligadas.', 1500);
+        }),
         item('↻', hasNew ? 'Atualizar (nova versão)' : 'Atualizar', () => void this.doUpdate()),
         item('✕', 'Sair do jogo', () => this.exit()),
       ),
