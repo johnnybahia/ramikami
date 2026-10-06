@@ -27,4 +27,4 @@ jobs:
         run: npm run deploy
       - name: Aviso
         if: env.CLOUDFLARE_API_TOKEN == ''
-        run: echo "Sem CLOUDFLARE_API_TOKEN nos segredos do repositório: build testado, mas nada foi publicado."
+        run: echo "Sem CLOUDFLARE_API_TOKEN nos segredos do repositorio - build testado, mas nada foi publicado."
