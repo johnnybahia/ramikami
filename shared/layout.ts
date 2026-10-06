@@ -57,6 +57,27 @@ export function findCompactSpot(table: readonly SetState[], len: number): { x: n
   return findSpot(table, -1, cx, cz, len);
 }
 
+/**
+ * Vaga guia para uma NOVA linha: usa as fileiras "pares" em volta do centro (uma fileira de folga entre elas),
+ * escolhe a mais perto da altura pedida e preenche da esquerda para a direita, perto do centro.
+ */
+export function findGuideSpot(table: readonly SetState[], len: number, wantZ: number): { x: number; z: number } | null {
+  const cx = Math.floor(COLS / 2);
+  const cz = Math.floor(ROWS / 2);
+  const rows: number[] = [];
+  for (let d = 0; d <= ROWS; d += 2) {
+    if (d === 0) rows.push(cz);
+    else rows.push(cz - d, cz + d);
+  }
+  const ordered = rows.filter((z) => z >= 0 && z < ROWS).sort((a, b) => Math.abs(a + 0.5 - wantZ) - Math.abs(b + 0.5 - wantZ));
+  for (let half = 5; half <= COLS / 2; half += 3) {
+    const lo = Math.max(0, cx - half);
+    const hi = Math.min(COLS, cx + half + 1);
+    for (const z of ordered) for (let x = lo; x + len <= hi; x++) if (fits(table, -1, x, z, len)) return { x, z };
+  }
+  return findCompactSpot(table, len);
+}
+
 const clampInt = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, Math.round(Number.isFinite(v) ? v : 0)));
 
 /** Normaliza posições e resolve sobreposições, mantendo a ordem dos sets. Reatribui ids 1..n. */
