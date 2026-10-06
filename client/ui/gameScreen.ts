@@ -64,6 +64,8 @@ export class GameScreen {
   private undo: Draft[] = [];
   private selected = new Set<number>();
   private btnPlaySel!: HTMLButtonElement;
+  private turnBanner = h('div', { class: 'turn-banner hidden', text: '⚡ SUA VEZ! Toque para começar' });
+  private nagTimer = 0;
   private btnCam!: HTMLButtonElement;
   private btnMic!: HTMLButtonElement;
   private mode: Mode = 'tile';
@@ -181,6 +183,33 @@ export class GameScreen {
     return !!this.view && this.view.phase === 'playing' && this.view.turnId === this.view.you;
   }
 
+  private startTurnAlert(): void {
+    this.stopTurnAlert();
+    this.turnBanner.classList.remove('hidden');
+    this.root.classList.add('my-turn');
+    let n = 0;
+    const buzz = (): void => {
+      navigator.vibrate?.([220, 120, 220]);
+      if (++n >= 8) window.clearInterval(this.nagTimer);
+    };
+    buzz();
+    this.nagTimer = window.setInterval(buzz, 6000);
+    window.addEventListener('pointerdown', this.ackTurn, { capture: true, once: true });
+    window.addEventListener('keydown', this.ackTurn, { capture: true, once: true });
+  }
+
+  private ackTurn = (): void => this.stopTurnAlert();
+
+  private stopTurnAlert(): void {
+    window.clearInterval(this.nagTimer);
+    this.nagTimer = 0;
+    this.turnBanner.classList.add('hidden');
+    this.root.classList.remove('my-turn');
+    window.removeEventListener('pointerdown', this.ackTurn, true);
+    window.removeEventListener('keydown', this.ackTurn, true);
+    navigator.vibrate?.(0);
+  }
+
   private onView(v: RoomView): void {
     const prev = this.view;
     this.view = v;
@@ -201,9 +230,8 @@ export class GameScreen {
     if (v.turnId !== this.lastTurnId) {
       this.lastTurnId = v.turnId;
       if (v.turnId === v.you && v.phase === 'playing') {
-        toast('Sua vez!', 1400);
-        navigator.vibrate?.(40);
-      }
+        this.startTurnAlert();
+      } else this.stopTurnAlert();
     }
     const ids = v.players.filter((p) => !p.left && p.connected).map((p) => p.id);
     if (this.rtc) this.rtc.setPeers(ids);
@@ -542,7 +570,7 @@ export class GameScreen {
     const left = h('div', { class: 'tools' }, this.btnUndo, this.btnReset, sortNum, sortCol, modes, ...(this.b.mode === 'online' ? [this.btnCam, this.btnMic] : []));
     const right = h('div', { class: 'mainact' }, this.btnPlaySel, this.btnDraw, this.btnConfirm);
     this.actionbar.append(left, right);
-    this.root.append(this.statusEl);
+    this.root.append(this.statusEl, this.turnBanner);
   }
 
   private updateActions(): void {
@@ -728,6 +756,7 @@ export class GameScreen {
     this.offPwa();
     this.closeSeats();
     this.b.leave();
+    this.stopTurnAlert();
     this.rtc?.close();
     this.scene.dispose();
     this.root.remove();
