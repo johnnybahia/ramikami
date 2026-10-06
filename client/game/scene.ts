@@ -8,7 +8,7 @@ import { CELL_D, CELL_W, TILE_D, TILE_H, TILE_W, Tile, feltTexture, woodTexture 
 export const BOARD_W = COLS * CELL_W;
 export const BOARD_D = ROWS * CELL_D;
 
-export type Mode = 'tile' | 'set' | 'split';
+export type Mode = 'tile' | 'set' | 'split' | 'pick';
 type Region = 'board' | 'rack';
 
 export interface SceneState {
@@ -19,9 +19,11 @@ export interface SceneState {
   canEditBoard: boolean;
   mode: Mode;
   poolCount: number;
+  selected: Set<number>;
 }
 
 export interface SceneHandlers {
+  onPick(id: number): void;
   onRackDrop(id: number, index: number): void;
   onBoardDrop(id: number, cx: number, cz: number): void;
   onSetMove(setId: number, dx: number, dz: number): void;
@@ -51,7 +53,7 @@ export class TableScene {
   private rackCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 50);
   private tiles: Tile[] = [];
   private tileScene: (Region | null)[] = new Array(TILE_COUNT).fill(null);
-  private state: SceneState = { table: [], rack: [], placed: new Set(), valid: new Map(), canEditBoard: false, mode: 'tile', poolCount: 0 };
+  private state: SceneState = { table: [], rack: [], placed: new Set(), valid: new Map(), canEditBoard: false, mode: 'tile', poolCount: 0, selected: new Set() };
   private cam = { tx: 0, tz: 0, dist: 28 };
   private W = 1;
   private H = 1;
@@ -389,6 +391,10 @@ export class TableScene {
           k = 0.2;
         }
       }
+      if (region === 'rack' && s.selected.has(t.id)) {
+        tint = 0xffd23a;
+        k = 0.55;
+      }
       t.setTint(tint, k);
     }
   }
@@ -572,6 +578,7 @@ export class TableScene {
     }
     if (it.type === 'tile') {
       if (!it.active) {
+        if (this.state.mode === 'pick' && this.tileScene[it.id] === 'rack') return;
         if (Math.hypot(p.x - it.startX, p.y - it.startY) <= DRAG_THRESHOLD) return;
         it.active = true;
         this.tiles[it.id]!.dragging = true;
@@ -643,6 +650,8 @@ export class TableScene {
     } else if (it.type === 'set') {
       if (it.active && (it.dx !== 0 || it.dz !== 0)) this.handlers.onSetMove(it.setId, it.dx, it.dz);
       this.syncTiles();
+    } else if (it.type === 'tile' && !it.active && this.state.mode === 'pick' && this.tileScene[it.id] === 'rack') {
+      if (Math.hypot(p.x - it.startX, p.y - it.startY) <= DRAG_THRESHOLD * 2) this.handlers.onPick(it.id);
     } else if (it.type === 'tile' && it.active) {
       const t = this.tiles[it.id]!;
       t.dragging = false;
