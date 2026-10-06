@@ -58,7 +58,6 @@ const REASONS: Record<string, string> = { empty: 'Alguém bateu (ficou sem pedra
 export class GameScreen {
   private root = h('div', { class: 'game' });
   private stage = h('div', { class: 'stage' });
-  private topbar = h('div', { class: 'topbar' });
   private boxLayer = h('div', { class: 'playerbar' });
   private head = h('div', { class: 'head' });
   private actionbar = h('div', { class: 'actionbar' });
@@ -91,7 +90,7 @@ export class GameScreen {
   private seatModal: HTMLElement | null = null;
   private b: Backend;
   private timerPill = h('div', { class: 'pill timer', text: '' });
-  private menuBtn = h('button', { class: 'pill menu', text: '☰ Menu', attrs: { type: 'button' } });
+  private menuBtn = h('button', { class: 'pill menu', text: '☰', attrs: { type: 'button', 'aria-label': 'Menu', title: 'Menu' } });
   private zoomDock = h('div', { class: 'zoomdock' });
   private btnConfirm!: HTMLButtonElement;
   private btnDraw!: HTMLButtonElement;
@@ -105,7 +104,7 @@ export class GameScreen {
   constructor(private o: GameScreenOpts) {
     this.b = o.backend;
     document.body.append(this.root);
-    this.head.append(this.topbar, this.boxLayer);
+    this.head.append(this.menuBtn, this.boxLayer, this.timerPill);
     this.root.append(this.stage, this.head, this.actionbar, this.overlay, this.connEl);
     this.scene = new TableScene(this.stage, {
       onRackDrop: (id, i) => this.onRackDrop(id, i),
@@ -411,7 +410,6 @@ export class GameScreen {
 
   private buildTopbar(): void {
     this.menuBtn.addEventListener('click', () => this.openMenu());
-    this.topbar.append(this.menuBtn, this.timerPill);
     const dock = (label: string, title: string, fn: () => void): HTMLButtonElement => h('button', { class: 'zoom', text: label, attrs: { type: 'button', 'aria-label': title, title }, on: { click: fn } });
     this.zoomDock.append(dock('＋', 'Aproximar', () => this.scene.zoomBy(0.75)), dock('－', 'Afastar', () => this.scene.zoomBy(1.33)), dock('⌖', 'Ver a mesa toda', () => this.scene.fit()));
   }
@@ -558,7 +556,7 @@ export class GameScreen {
       this.boxLayer.append(box.el);
       box.el.className = `pbox${v.turnId === p.id ? ' turn' : ''}${p.connected ? '' : ' offline'}${p.id === meId ? ' me' : ''}`;
       box.name.textContent = `${p.isHost ? '♛ ' : ''}${p.name}`;
-      box.meta.textContent = v.phase === 'lobby' ? (p.connected ? '' : 'offline') : `${p.rackCount} pedras${p.melded ? ' · abriu' : ''}`;
+      box.meta.textContent = v.phase === 'lobby' ? (p.connected ? '' : 'offline') : `${p.rackCount}${p.melded ? ' ✓' : ''}`;
       const bp = personaOfBotId(p.id);
       const photo = this.photos.get(p.id) ?? (bp ? personaAvatar(bp) : null);
       const key = `${p.name}|${photo ? photo.length : 0}`;

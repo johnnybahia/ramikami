@@ -269,3 +269,18 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .order li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); }
 .order .mv { display: flex; gap: 4px; }
 .order .off { opacity: 0.3; pointer-events: none; }
+
+/* ---- cabeçalho mínimo: ☰ escondido num canto, jogadores bem juntos, mais mesa ---- */
+.head { flex-direction: row; align-items: center; gap: 6px; padding: calc(var(--safe-t) + 4px) calc(var(--safe-r) + 6px) 4px calc(var(--safe-l) + 6px); background: linear-gradient(180deg, rgba(8, 14, 11, 0.82), rgba(8, 14, 11, 0.4)); }
+.head .pill.menu { pointer-events: auto; flex: none; min-width: 40px; min-height: 40px; padding: 0; font-size: 1.15rem; line-height: 1; background: rgba(10, 18, 14, 0.55); }
+.head .pill.timer { pointer-events: auto; flex: none; min-height: 32px; padding: 4px 9px; font-size: 0.8rem; }
+.playerbar { flex: 1; min-width: 0; gap: 9px; }
+.playerbar .pbox { min-width: 46px; max-width: 70px; gap: 1px; }
+.playerbar .pbox + .pbox::before { left: -8px; top: 7px; font-size: 1rem; }
+.playerbar .pbox .frame { width: 40px; height: 40px; border-radius: 11px; border-width: 1.5px; }
+.playerbar .pbox .frame::after { height: 3px; }
+.playerbar .pbox .holder .avatar.initial { font-size: 1.3rem; }
+.playerbar .pname { font-size: 0.6rem; max-width: 66px; padding: 0 4px; }
+.playerbar .pmeta { font-size: 0.6rem; line-height: 1; }
+.playerbar .pbox .ctl { top: 42px; }
+.hidden-timer { display: none; }
