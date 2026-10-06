@@ -192,10 +192,12 @@ export class GameRoom implements DurableObject {
   private seriesView(): SeriesView | undefined {
     const s = this.s!;
     if (!s.series) return undefined;
-    const rows = Object.values(s.series.stats).sort((a, b) => b.wins - a.wins || a.points - b.points);
+    const rate = (r: SeriesRow): number => (r.games > 0 ? r.wins / r.games : 0);
+    const avg = (r: SeriesRow): number => (r.games > 0 ? r.points / r.games : Infinity);
+    const rows = Object.values(s.series.stats).sort((a, b) => rate(b) - rate(a) || avg(a) - avg(b) || b.games - a.games);
     const over = s.series.done >= s.bestOf;
     const top = rows[0];
-    const championIds = over && top ? rows.filter((r) => r.wins === top.wins && r.points === top.points).map((r) => r.id) : [];
+    const championIds = over && top ? rows.filter((r) => rate(r) === rate(top) && avg(r) === avg(top)).map((r) => r.id) : [];
     return { bestOf: s.bestOf, done: s.series.done, over, rows, championIds, awaiting: s.series.awaiting };
   }
 

@@ -842,10 +842,10 @@ export class GameScreen {
     const row = h('div', { class: 'row' });
     const kids: (HTMLElement | null)[] = [];
     if (ser) {
-      const board = h('table', { class: 'board' }, h('tr', {}, h('th', { text: 'Placar da sessão' }), h('th', { text: 'Vitórias' }), h('th', { text: 'Pontos' })));
+      const board = h('table', { class: 'board' }, h('tr', {}, h('th', { text: 'Placar da sessão' }), h('th', { text: 'Vitórias' }), h('th', { text: 'Média' })));
       for (const s of ser.rows) {
         const champ = ser.championIds.includes(s.id);
-        board.append(h('tr', { class: champ ? 'win' : '' }, h('td', { text: `${champ ? '🏆 ' : ''}${s.name}` }), h('td', { text: String(s.wins) }), h('td', { text: String(s.points) })));
+        board.append(h('tr', { class: champ ? 'win' : '' }, h('td', { text: `${champ ? '🏆 ' : ''}${s.name}` }), h('td', { text: `${s.wins}/${s.games}` }), h('td', { text: (s.games > 0 ? s.points / s.games : 0).toFixed(1) })));
       }
       kids.push(board);
       const aw = ser.awaiting;
