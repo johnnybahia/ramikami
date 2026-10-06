@@ -44,7 +44,7 @@ export function findCompactSpot(table: readonly SetState[], len: number): { x: n
   const cx = Math.floor(COLS / 2);
   const cz = Math.floor(ROWS / 2);
   const rows: number[] = [0];
-  for (let d = 2; d <= ROWS; d += 2) rows.push(-d, d);
+  for (let d = 1; d <= ROWS; d++) rows.push(-d, d);
   for (let half = 5; half <= COLS / 2; half += 3) {
     const lo = Math.max(0, cx - half);
     const hi = Math.min(COLS, cx + half + 1);
@@ -65,7 +65,7 @@ export function findGuideSpot(table: readonly SetState[], len: number, wantZ: nu
   const cx = Math.floor(COLS / 2);
   const cz = Math.floor(ROWS / 2);
   const rows: number[] = [];
-  for (let d = 0; d <= ROWS; d += 2) {
+  for (let d = 0; d <= ROWS; d++) {
     if (d === 0) rows.push(cz);
     else rows.push(cz - d, cz + d);
   }
@@ -78,22 +78,66 @@ export function findGuideSpot(table: readonly SetState[], len: number, wantZ: nu
   return findCompactSpot(table, len);
 }
 
+const clone = (list: readonly SetState[]): SetState[] => list.map((s) => ({ ...s, tiles: s.tiles.slice() }));
+
+/**
+ * Grade imaginária: cada fileira é uma linha; os conjuntos de uma linha ficam sempre com PELO MENOS uma casa
+ * (uma pedra) de distância na horizontal. Se um conjunto cresce ou é solto perto de outro, os vizinhos são
+ * EMPURRADOS para o lado (para a direita; se faltar espaço na borda, para a esquerda) em vez de mudar de lugar.
+ * `anchorId` é o conjunto que fica parado (o que cresceu ou foi solto).
+ */
+export function packRows(input: readonly SetState[], anchorId = -1): SetState[] | null {
+  const out = clone(input);
+  const rows = new Map<number, SetState[]>();
+  for (const s of out) {
+    const r = rows.get(s.z);
+    if (r) r.push(s);
+    else rows.set(s.z, [s]);
+  }
+  for (const row of rows.values()) {
+    row.sort((a, b) => a.x - b.x || (a.id === anchorId ? -1 : b.id === anchorId ? 1 : 0));
+    const ai = row.findIndex((s) => s.id === anchorId);
+    const len = (s: SetState): number => s.tiles.length;
+    if (ai >= 0) {
+      for (let i = ai + 1; i < row.length; i++) row[i]!.x = Math.max(row[i]!.x, row[i - 1]!.x + len(row[i - 1]!) + 1);
+      for (let i = ai - 1; i >= 0; i--) row[i]!.x = Math.min(row[i]!.x, row[i + 1]!.x - len(row[i]!) - 1);
+    } else {
+      for (let i = 1; i < row.length; i++) row[i]!.x = Math.max(row[i]!.x, row[i - 1]!.x + len(row[i - 1]!) + 1);
+    }
+    // estourou a borda direita: puxa para a esquerda; se ainda assim não couber, a linha está cheia
+    for (let i = row.length - 1; i >= 0; i--) {
+      const maxX = i === row.length - 1 ? COLS - len(row[i]!) : row[i + 1]!.x - len(row[i]!) - 1;
+      if (row[i]!.x > maxX) row[i]!.x = maxX;
+    }
+    for (let i = 0; i < row.length; i++) {
+      const minX = i === 0 ? 0 : row[i - 1]!.x + len(row[i - 1]!) + 1;
+      if (row[i]!.x < minX) return null;
+    }
+  }
+  return out;
+}
+
 const clampInt = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, Math.round(Number.isFinite(v) ? v : 0)));
 
 /** Normaliza posições e resolve sobreposições, mantendo a ordem dos sets. Reatribui ids 1..n. */
 export function relayout(input: readonly SetState[]): SetState[] {
-  const placed: SetState[] = [];
-  input.forEach((s, i) => {
+  const clamped: SetState[] = input.map((s, i) => {
     const len = s.tiles.length;
-    const set: SetState = { id: i + 1, tiles: s.tiles.slice(), x: clampInt(s.x, 0, Math.max(0, COLS - len)), z: clampInt(s.z, 0, ROWS - 1) };
-    if (!fits(placed, -1, set.x, set.z, len)) {
-      const spot = findSpot(placed, -1, set.x, set.z, len);
+    return { id: i + 1, tiles: s.tiles.slice(), x: clampInt(s.x, 0, Math.max(0, COLS - len)), z: clampInt(s.z, 0, ROWS - 1) };
+  });
+  const packed = packRows(clamped);
+  if (packed) return packed;
+  // linha lotada: coloca um a um no espaço livre mais próximo
+  const placed: SetState[] = [];
+  for (const set of clamped) {
+    if (!fits(placed, -1, set.x, set.z, set.tiles.length)) {
+      const spot = findSpot(placed, -1, set.x, set.z, set.tiles.length);
       if (spot) {
         set.x = spot.x;
         set.z = spot.z;
       }
     }
     placed.push(set);
-  });
+  }
   return placed;
 }

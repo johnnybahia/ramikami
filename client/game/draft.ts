@@ -1,6 +1,6 @@
 // Rascunho do turno: o jogador mexe na mesa e no cavalete livremente; só vale ao confirmar.
 import { analyzeSet, validatePlay, MELD_MIN, type PlayCheck } from '../../shared/rules';
-import { COLS, ROWS, findCompactSpot, findGuideSpot, findSpot, fits, relayout, type SetState } from '../../shared/layout';
+import { COLS, ROWS, findCompactSpot, findGuideSpot, findSpot, fits, packRows, relayout, type SetState } from '../../shared/layout';
 import { isJoker, tileColor, tileNum } from '../../shared/tiles';
 
 export interface Draft {
@@ -87,13 +87,48 @@ export function dropOnSet(d: Draft, id: number, setId: number, index: number): D
   return n;
 }
 
-export function dropNew(d: Draft, id: number, x: number, z: number): Draft | null {
+/**
+ * Grade: pedra solta numa linha que já tem conjuntos vai para o lado do conjunto mais próximo (uma pedra de
+ * distância); numa linha vazia ou longe dos outros, fica na casa onde foi solta.
+ */
+export function snapRowSpot(table: readonly SetState[], len: number, x: number, z: number): { x: number; z: number } {
+  const row = Math.max(0, Math.min(ROWS - 1, Math.floor(z)));
+  const cell = Math.max(0, Math.min(COLS - len, Math.floor(x)));
+  const inRow = table.filter((s) => s.z === row);
+  if (inRow.length === 0) return { x: cell, z: row };
+  let best: { x: number; d: number } | null = null;
+  for (const s of inRow) {
+    const end = s.x + s.tiles.length;
+    for (const cx of [end + 1, s.x - 1 - len]) {
+      if (cx < 0 || cx + len > COLS) continue;
+      const d = Math.abs(cx + len / 2 - x);
+      if (!best || d < best.d) best = { x: cx, d };
+    }
+  }
+  if (best && best.d <= 8) return { x: best.x, z: row };
+  return { x: cell, z: row };
+}
+
+export function dropNew(d: Draft, id: number, x: number, z: number, exact = false): Draft | null {
   const n = cloneDraft(d);
   const wasInRack = inRack(n, id);
   detach(n, id);
-  const spot = findSpot(n.table, -1, x, z, 1);
-  if (!spot) return null;
-  n.table.push({ id: nextId(n), tiles: [id], x: spot.x, z: spot.z });
+  const want = exact ? { x: Math.max(0, Math.min(COLS - 1, Math.floor(x))), z: Math.max(0, Math.min(ROWS - 1, Math.floor(z))) } : snapRowSpot(n.table, 1, x, z);
+  const set: SetState = { id: nextId(n), tiles: [id], x: want.x, z: want.z };
+  n.table.push(set);
+  const packed = packRows(n.table, set.id);
+  if (packed) {
+    for (const p of packed) {
+      const t = n.table.find((v) => v.id === p.id)!;
+      t.x = p.x;
+      t.z = p.z;
+    }
+  } else {
+    n.table.pop();
+    const spot = findSpot(n.table, -1, x, z, 1);
+    if (!spot) return null;
+    n.table.push({ id: set.id, tiles: [id], x: spot.x, z: spot.z });
+  }
   if (wasInRack) n.placed.add(id);
   return n;
 }
@@ -169,10 +204,11 @@ export function suggestDrop(table: readonly SetState[], id: number, cx: number, 
  * Onde cai uma pedra solta fora de qualquer conjunto: se for solta colada no "lugar guia" (próxima vaga compacta
  * perto do centro), usa a vaga; senão fica exatamente onde o jogador soltou (ele cria o próprio conjunto onde quiser).
  */
-export function newSetSpot(table: readonly SetState[], id: number, x: number, z: number): { x: number; z: number; guide: { x: number; z: number } | null } {
+export function newSetSpot(table: readonly SetState[], id: number, x: number, z: number): { x: number; z: number; guide: { x: number; z: number } | null; exact: boolean } {
   const guide = findGuideSpot(tableWithoutTile(table, id), 3, z);
-  if (guide && Math.abs(guide.x + 0.5 - x) <= 1.6 && Math.abs(guide.z + 0.5 - z) <= 0.9) return { x: guide.x, z: guide.z, guide };
-  return { x: Math.max(0, Math.min(COLS - 1, Math.floor(x))), z: Math.max(0, Math.min(ROWS - 1, Math.floor(z))), guide };
+  if (guide && Math.abs(guide.x + 0.5 - x) <= 1.6 && Math.abs(guide.z + 0.5 - z) <= 0.9) return { x: guide.x, z: guide.z, guide, exact: true };
+  const sp = snapRowSpot(tableWithoutTile(table, id), 1, x, z);
+  return { x: sp.x, z: sp.z, guide, exact: false };
 }
 
 export function splitSet(d: Draft, setId: number, index: number): Draft | null {
@@ -181,9 +217,22 @@ export function splitSet(d: Draft, setId: number, index: number): Draft | null {
   const n = cloneDraft(d);
   const src = n.table.find((x) => x.id === setId)!;
   const tail = src.tiles.splice(index);
+  const created: SetState = { id: nextId(n), tiles: tail, x: src.x + index + 1, z: src.z };
+  n.table.push(created);
+  // a parte cortada fica uma pedra adiante; quem estava na frente é empurrado
+  const packed = packRows(n.table, created.id);
+  if (packed) {
+    for (const p of packed) {
+      const t = n.table.find((v) => v.id === p.id)!;
+      t.x = p.x;
+      t.z = p.z;
+    }
+    return n;
+  }
+  n.table.pop();
   const spot = findSpot(n.table, -1, src.x + index + 1, src.z, tail.length);
   if (!spot) return null;
-  n.table.push({ id: nextId(n), tiles: tail, x: spot.x, z: spot.z });
+  n.table.push({ id: created.id, tiles: tail, x: spot.x, z: spot.z });
   return n;
 }
 
@@ -191,7 +240,18 @@ export function moveSet(d: Draft, setId: number, x: number, z: number): Draft | 
   const n = cloneDraft(d);
   const s = n.table.find((v) => v.id === setId);
   if (!s) return null;
-  const spot = findSpot(n.table, setId, x, z, s.tiles.length);
+  s.x = Math.max(0, Math.min(COLS - s.tiles.length, Math.round(x)));
+  s.z = Math.max(0, Math.min(ROWS - 1, Math.round(z)));
+  const packed = packRows(n.table, setId);
+  if (packed) {
+    for (const p of packed) {
+      const t = n.table.find((v) => v.id === p.id)!;
+      t.x = p.x;
+      t.z = p.z;
+    }
+    return n;
+  }
+  const spot = findSpot(d.table, setId, x, z, s.tiles.length);
   if (!spot) return null;
   s.x = spot.x;
   s.z = spot.z;
@@ -202,6 +262,16 @@ export function moveSet(d: Draft, setId: number, x: number, z: number): Draft | 
 function fixLayout(table: SetState[], setId: number): SetState[] {
   const s = table.find((v) => v.id === setId);
   if (!s) return table;
+  // o conjunto que cresceu fica parado e empurra os vizinhos da linha para o lado
+  const packed = packRows(table, setId);
+  if (packed) {
+    for (const p of packed) {
+      const t = table.find((v) => v.id === p.id)!;
+      t.x = p.x;
+      t.z = p.z;
+    }
+    return table;
+  }
   if (!fits(table, setId, s.x, s.z, s.tiles.length)) {
     const spot = findSpot(table, setId, s.x, s.z, s.tiles.length);
     if (spot) {
