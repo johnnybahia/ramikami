@@ -13,6 +13,7 @@
     "server:deploy": "wrangler deploy -c server/wrangler.toml",
     "deploy": "npm run build && wrangler deploy -c server/wrangler.toml",
     "e2e:server": "node scripts/e2e-server.mjs",
+    "e2e:series": "node scripts/e2e-series.mjs",
     "icons": "python3 scripts/make_icons.py"
   },
   "keywords": [],

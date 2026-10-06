@@ -1,5 +1,5 @@
 import type { SetState } from '../shared/layout';
-import type { BotLevel, RoomView, TurnSeconds } from '../shared/protocol';
+import type { BestOf, BotLevel, RoomView, TurnSeconds } from '../shared/protocol';
 
 export interface BackendEvents {
   onView(v: RoomView): void;
@@ -23,7 +23,12 @@ export interface Backend {
   draft(table: SetState[]): void;
   start(): void;
   seat(id: string, seat: number): void;
-  settings(turnSeconds: TurnSeconds): void;
+  settings(opts: { turnSeconds?: TurnSeconds; bestOf?: BestOf }): void;
+  shuffle(): void;
+  next(): void;
+  more(): void;
+  confirm(yes: boolean): void;
+  endSession(): void;
   kick(id: string): void;
   setBots(count: number, level: BotLevel): void;
   media(cam: boolean, mic: boolean): void;

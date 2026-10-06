@@ -4,7 +4,8 @@ import { COLS, ROWS, type SetState } from '../../shared/layout';
 import { TILE_COUNT } from '../../shared/tiles';
 import { setHighContrast } from './tiles3d';
 import { acceptingSets, resolveBoardDrop, suggestDrop, tableWithoutTile } from './draft';
-import { CELL_D, CELL_W, TILE_D, TILE_H, TILE_W, Tile, feltTexture, woodTexture } from './tiles3d';
+import { CELL_D, CELL_W, TILE_D, TILE_H, TILE_W, Tile, woodTexture } from './tiles3d';
+import { onSkinChange, skinById, skinTexture, type SkinId } from './skins';
 
 export const BOARD_W = COLS * CELL_W;
 export const BOARD_D = ROWS * CELL_D;
@@ -72,6 +73,8 @@ export class TableScene {
   private lastTap: { setId: number; t: number } | null = null;
   private aniso = 4;
   private sizeF = 1;
+  private felt!: THREE.Mesh;
+  private offSkin: () => void = () => {};
   /** conjuntos onde a pedra arrastada encaixa (brilham em verde) */
   private hintSets = new Set<number>();
   private hintFor = -1;
@@ -132,10 +135,12 @@ export class TableScene {
   // ---------- construção ----------
   private buildBoard(shadowSize: number): void {
     const s = this.boardScene;
-    s.background = new THREE.Color(0x0b1410);
+    s.background = new THREE.Color(skinById('verde').bg);
     const feltW = BOARD_W + 9;
     const feltD = BOARD_D + 8;
-    const felt = new THREE.Mesh(new THREE.PlaneGeometry(feltW, feltD), new THREE.MeshStandardMaterial({ map: feltTexture(), roughness: 1, metalness: 0 }));
+    const felt = new THREE.Mesh(new THREE.PlaneGeometry(feltW, feltD), new THREE.MeshStandardMaterial({ map: skinTexture('verde', 4), roughness: 1, metalness: 0 }));
+    this.felt = felt;
+    this.offSkin = onSkinChange(() => (this.dirty = true));
     felt.rotation.x = -Math.PI / 2;
     felt.receiveShadow = true;
     s.add(felt);
@@ -422,6 +427,16 @@ export class TableScene {
     this.sizeF = [1, 1.25, 1.5][size] ?? 1;
     this.layoutRack(this.state.rack.length);
     this.syncTiles();
+    this.dirty = true;
+  }
+
+  /** Troca o pano da mesa (verde padrão ou homenagens sóbrias). */
+  setSkin(id: SkinId): void {
+    const skin = skinById(id);
+    const mat = this.felt.material as THREE.MeshStandardMaterial;
+    mat.map = skinTexture(id, this.aniso);
+    mat.needsUpdate = true;
+    this.boardScene.background = new THREE.Color(skin.bg);
     this.dirty = true;
   }
 
@@ -826,6 +841,7 @@ export class TableScene {
   dispose(): void {
     this.disposed = true;
     cancelAnimationFrame(this.rafId);
+    this.offSkin();
     this.ro.disconnect();
     document.removeEventListener('visibilitychange', this.onVis);
     this.canvas.remove();

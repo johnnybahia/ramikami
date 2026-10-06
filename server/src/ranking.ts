@@ -62,6 +62,10 @@ export class Ranking implements DurableObject {
       const out: RankingRow[] = rows.map((r) => ({ id: r.id, name: r.name, games: r.games, wins: r.wins, avg: Math.round((r.total / r.games) * 10) / 10, best: r.best }));
       return Response.json(out);
     }
+    if (req.method === 'POST' && url.pathname === '/reset') {
+      this.sql.exec('DELETE FROM players');
+      return new Response('ok');
+    }
     return new Response('not found', { status: 404 });
   }
 }

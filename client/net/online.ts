@@ -2,7 +2,7 @@ import type { Backend, BackendEvents } from '../backend';
 import { noopEvents } from '../backend';
 import { wsUrl } from '../api';
 import type { SetState } from '../../shared/layout';
-import type { BotLevel, ClientMsg, ServerMsg, TurnSeconds } from '../../shared/protocol';
+import type { BestOf, BotLevel, ClientMsg, ServerMsg, TurnSeconds } from '../../shared/protocol';
 import type { Profile } from '../store';
 
 export class OnlineBackend implements Backend {
@@ -108,8 +108,23 @@ export class OnlineBackend implements Backend {
   seat(id: string, seat: number): void {
     this.send({ t: 'seat', id, seat });
   }
-  settings(turnSeconds: TurnSeconds): void {
-    this.send({ t: 'settings', turnSeconds });
+  settings(opts: { turnSeconds?: TurnSeconds; bestOf?: BestOf }): void {
+    this.send({ t: 'settings', ...opts });
+  }
+  shuffle(): void {
+    this.send({ t: 'shuffle' });
+  }
+  next(): void {
+    this.send({ t: 'next' });
+  }
+  more(): void {
+    this.send({ t: 'more' });
+  }
+  confirm(yes: boolean): void {
+    this.send({ t: 'confirm', yes });
+  }
+  endSession(): void {
+    this.send({ t: 'endSession' });
   }
   setBots(count: number, level: BotLevel): void {
     this.send({ t: 'bots', count, level });
