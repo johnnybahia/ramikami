@@ -33,6 +33,8 @@ export interface SceneHandlers {
   onBoardDrop(id: number, cx: number, cz: number): void;
   onSetMove(setId: number, dx: number, dz: number): void;
   onPickBoard(id: number, whole: boolean): void;
+  /** a altura do cavalete mudou (recolheu/abriu): a barra de ações precisa subir/descer */
+  onRackResize?(): void;
   onPoolTap(): void;
 }
 
@@ -98,6 +100,9 @@ export class TableScene {
   private fitted = false;
   /** enquadra a mesa sozinha (o mínimo de zoom manual); some quando o jogador mexe na câmera */
   private autoFit = true;
+  private bigTiles = false;
+  private rackAuto = false;
+  private rackPeek = false;
   private camGoal: { tx: number; tz: number; dist: number } | null = null;
   private boundsKey = '';
 
@@ -365,6 +370,7 @@ export class TableScene {
 
   // ---------- estado ----------
   setState(s: SceneState): void {
+    if (s.canEditBoard !== this.state.canEditBoard) this.rackPeek = false;
     this.state = s;
     this.poolGroup.visible = s.poolCount > 0;
     this.layoutRack(s.rack.length);
@@ -374,6 +380,25 @@ export class TableScene {
     if (!this.fitted && s.table.length > 0) this.fitNow();
     else if (s.table.length > 0 && !this.it) this.followTable();
     this.dirty = true;
+  }
+
+  /** Pedras grandes: quando ligado, a câmera não afasta além de ~18 colunas na tela (rola em vez de encolher). */
+  setBigTiles(on: boolean): void {
+    this.bigTiles = on;
+    this.fit();
+  }
+
+  /** Cavalete recolhido numa faixa fina fora da minha vez (toque para abrir). */
+  setRackAuto(on: boolean): void {
+    this.rackAuto = on;
+    this.rackPeek = false;
+    this.layoutRack(this.state.rack.length);
+    this.syncTiles();
+    this.dirty = true;
+  }
+
+  private rackCollapsed(): boolean {
+    return this.rackAuto && !this.state.canEditBoard && !this.rackPeek;
   }
 
   private layoutRack(n: number): void {
@@ -390,10 +415,11 @@ export class TableScene {
     const { rows, h } = need(cols);
     this.cols = cols;
     this.rows = rows;
-    const nextH = Math.max(H * 0.17, Math.min(H * (this.sizeF > 1 ? 0.52 : 0.42), h));
+    const nextH = this.rackCollapsed() ? 38 : Math.max(H * 0.17, Math.min(H * (this.sizeF > 1 ? 0.52 : 0.42), h));
     if (Math.abs(nextH - this.rackH) > 0.5) {
       this.rackH = nextH;
       this.updateCams();
+      this.handlers.onRackResize?.();
     }
     const cw = cols * CELL_W + 0.9;
     const ch = rows * CELL_D + 0.9;
@@ -592,10 +618,12 @@ export class TableScene {
     const h = Math.max(maxZ - minZ, 5) + 1.5;
     const aspect = this.W / Math.max(1, this.H - this.rackH);
     const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+    let dist = Math.max(8, Math.min(75, Math.max(w / 2 / (t * aspect), h / 2 / (t * Math.sin(ELEV)))));
+    if (this.bigTiles) dist = Math.min(dist, Math.max(8, (18 * CELL_W + 3) / 2 / (t * aspect)));
     const goal = {
       tx: Math.max(-BOARD_W / 2, Math.min(BOARD_W / 2, (minX + maxX) / 2)),
       tz: Math.max(-BOARD_D / 2 - 3, Math.min(BOARD_D / 2, (minZ + maxZ) / 2)),
-      dist: Math.max(8, Math.min(75, Math.max(w / 2 / (t * aspect), h / 2 / (t * Math.sin(ELEV))))),
+      dist,
     };
     return { ...goal, key: [minX, maxX, minZ, maxZ].map((v) => Math.round(v * 2)).join(',') };
   }
@@ -625,8 +653,8 @@ export class TableScene {
     this.boundsKey = g.key;
     // na minha vez a câmera não mexe enquanto monto (senão o enquadramento muda debaixo do dedo): só se algo sair da tela
     if (this.state.canEditBoard) {
-      if (this.allVisible()) return;
-    } else if (!this.autoFit && this.allVisible()) {
+      if (this.bigTiles || this.allVisible()) return;
+    } else if (!this.autoFit && (this.bigTiles || this.allVisible())) {
       // se o jogador mexeu na câmera, só reenquadra quando algo passa a ficar fora da tela
       return;
     }
@@ -711,6 +739,13 @@ export class TableScene {
     }
     if (this.pointers.size > 1) return;
     const region = this.regionAt(p.y);
+    if (region === 'rack' && this.rackCollapsed()) {
+      this.rackPeek = true;
+      this.layoutRack(this.state.rack.length);
+      this.syncTiles();
+      this.dirty = true;
+      return;
+    }
     const id = this.pickTile(region, p.x, p.y, e.pointerType !== 'mouse');
     if (id !== null) {
       if (region === 'rack') {

@@ -1,6 +1,7 @@
 // Posição dos sets na mesa: grade de células, uma pedra por célula, com 1 célula de folga entre sets na mesma linha.
-export const COLS = 34;
-export const ROWS = 12;
+// grade mais alta que larga: no celular em pé a largura é o que limita o tamanho das pedras
+export const COLS = 26;
+export const ROWS = 16;
 
 export interface SetState {
   id: number;

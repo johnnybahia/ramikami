@@ -4,7 +4,7 @@ import { createGame, drawTurn, playTurn, removePlayer, currentPlayer, salvagePla
 import { botMove, pickBots, PERSONAS } from './bot';
 import { solveTable } from './solver';
 import { mulberry32, handPoints } from './tiles';
-import { animCounts, findCompactSpot, packRows, relayout, type SetState } from './layout';
+import { COLS, animCounts, findCompactSpot, packRows, relayout, type SetState } from './layout';
 import { animMsFor } from './protocol';
 
 // id = cor*26 + (num-1) (+13 para a segunda cópia). cor 0 preto, 1 azul, 2 vermelho, 3 laranja
@@ -276,9 +276,9 @@ describe('grade: packRows e relayout', () => {
     expect(grown.find((s) => s.id === 3)!.x).toBe(14); // empurrado em cadeia
   });
   it('na borda direita puxa para a esquerda; outras fileiras não mudam', () => {
-    const out = packRows([set(1, 5, 28, 2), set(2, 3, 20, 2), set(3, 4, 10, 5)], 1)!;
+    const out = packRows([set(1, 5, 20, 2), set(2, 3, 14, 2), set(3, 4, 10, 5)], 1)!;
     const g = (id: number) => out.find((s) => s.id === id)!;
-    expect(g(1).x + 5).toBeLessThanOrEqual(34);
+    expect(g(1).x + 5).toBeLessThanOrEqual(COLS);
     expect(g(2).x + 3 + 1).toBeLessThanOrEqual(g(1).x);
     expect(g(3).x).toBe(10);
   });
