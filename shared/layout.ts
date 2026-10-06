@@ -35,6 +35,28 @@ export function findSpot(table: readonly SetState[], skipId: number, wantX: numb
   return best;
 }
 
+/**
+ * Lugar para um conjunto novo (jogadas de bots e "jogar marcadas"): começa no mesmo enquadramento da tela
+ * (perto do centro), enche cada fileira da esquerda para a direita e pula uma fileira entre elas para as
+ * pedras ficarem mais separadas. Só abre para os lados/cima/baixo quando não houver mais espaço útil.
+ */
+export function findCompactSpot(table: readonly SetState[], len: number): { x: number; z: number } | null {
+  const cx = Math.floor(COLS / 2);
+  const cz = Math.floor(ROWS / 2);
+  const rows: number[] = [0];
+  for (let d = 2; d <= ROWS; d += 2) rows.push(-d, d);
+  for (let half = 5; half <= COLS / 2; half += 3) {
+    const lo = Math.max(0, cx - half);
+    const hi = Math.min(COLS, cx + half + 1);
+    for (const dz of rows) {
+      const z = cz + dz;
+      if (z < 0 || z >= ROWS) continue;
+      for (let x = lo; x + len <= hi; x++) if (fits(table, -1, x, z, len)) return { x, z };
+    }
+  }
+  return findSpot(table, -1, cx, cz, len);
+}
+
 const clampInt = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, Math.round(Number.isFinite(v) ? v : 0)));
 
 /** Normaliza posições e resolve sobreposições, mantendo a ordem dos sets. Reatribui ids 1..n. */

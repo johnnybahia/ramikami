@@ -4,7 +4,7 @@ import { createGame, drawTurn, playTurn, removePlayer, currentPlayer, salvagePla
 import { botMove, pickBots, PERSONAS } from './bot';
 import { solveTable } from './solver';
 import { mulberry32, handPoints } from './tiles';
-import type { SetState } from './layout';
+import { findCompactSpot, relayout, type SetState } from './layout';
 
 // id = cor*26 + (num-1) (+13 para a segunda cópia). cor 0 preto, 1 azul, 2 vermelho, 3 laranja
 const T = (color: number, num: number, copy = 0) => color * 13 + (num - 1) + copy * 52;
@@ -240,5 +240,23 @@ describe('salvagePlay com checkpoint (jogada válida + outra incompleta)', () =>
     g.turn = 0;
     g.players[0]!.melded = true;
     expect(salvagePlay(g, 'a', [], null)).toBeNull();
+  });
+});
+
+describe('findCompactSpot', () => {
+  it('conjuntos novos ficam no mesmo enquadramento, em fileiras separadas, sem sobrepor', () => {
+    const table: SetState[] = [];
+    for (let i = 0; i < 8; i++) {
+      const spot = findCompactSpot(table, 4)!;
+      expect(spot).not.toBeNull();
+      table.push({ id: i + 1, tiles: [0, 1, 2, 3], x: spot.x, z: spot.z });
+    }
+    const xs = table.map((s) => s.x);
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(10);
+    expect(Math.max(...xs)).toBeLessThanOrEqual(23);
+    // fileiras com uma fileira vazia entre elas
+    const rows = [...new Set(table.map((s) => s.z))].sort((a, b) => a - b);
+    for (let i = 1; i < rows.length; i++) expect(rows[i]! - rows[i - 1]!).toBeGreaterThanOrEqual(2);
+    expect(relayout(table).map((s) => [s.x, s.z])).toEqual(table.map((s) => [s.x, s.z]));
   });
 });
