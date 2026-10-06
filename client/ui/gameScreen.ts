@@ -22,6 +22,7 @@ import {
 } from '../game/draft';
 import { analyzeSet, arrangeTiles } from '../../shared/rules';
 import { isJoker } from '../../shared/tiles';
+import { pickChatter, type ChatKind } from '../../shared/chatter';
 import { BOT_LEVELS, LEVEL_CFG, MAX_BOTS, personaOfBotId, type BotLevel } from '../../shared/bot';
 import { personaAvatar } from '../botAvatars';
 import { a11yPanel, modal } from './screens';
@@ -77,6 +78,8 @@ export class GameScreen {
   private selected = new Set<number>();
   private botLevel: BotLevel = 'normal';
   private btnPlaySel!: HTMLButtonElement;
+  private chatBubble = h('div', { class: 'chat-bubble hidden' });
+  private chatTimer = 0;
   private turnBanner = h('div', { class: 'turn-banner hidden', text: '⚡ SUA VEZ! Toque para começar' });
   private nagTimer = 0;
   private autoMediaDone = false;
@@ -112,7 +115,7 @@ export class GameScreen {
     this.b = o.backend;
     document.body.append(this.root);
     this.head.append(this.menuBtn, this.boxLayer, this.timerPill);
-    this.root.append(this.stage, this.head, this.actionbar, this.overlay, this.connEl);
+    this.root.append(this.stage, this.head, this.chatBubble, this.actionbar, this.overlay, this.connEl);
     this.scene = new TableScene(this.stage, {
       onRackDrop: (id, i) => this.onRackDrop(id, i),
       onBoardDrop: (id, cx, cz) => this.onBoardDrop(id, cx, cz),
@@ -266,6 +269,7 @@ export class GameScreen {
       window.clearTimeout(this.busyTimer);
       this.busyTimer = window.setTimeout(() => this.afterBusy(), animMsFor(fresh) + 60);
     }
+    if (prev && prev.phase === 'playing' && v.turnNo > prev.turnNo) this.botChatter(prev, v);
     const sig = `${v.phase}|${v.turnNo}|${JSON.stringify(v.table)}|${v.rack.slice().sort((a, b) => a - b).join(',')}`;
     if (sig !== this.sig) {
       this.sig = sig;
@@ -292,6 +296,42 @@ export class GameScreen {
     if (this.rtc) this.rtc.setPeers(ids);
     else this.pendingPeers = ids;
     this.render();
+  }
+
+  /** Um bot comenta a jogada que acabou de acontecer (só visual, aparece depois da animação). */
+  private botChatter(prev: RoomView, v: RoomView): void {
+    const mover = prev.players.find((p) => p.id === prev.turnId);
+    if (!mover) return;
+    const now = v.players.find((p) => p.id === mover.id);
+    if (!now) return;
+    const delta = mover.rackCount - now.rackCount;
+    const bots = v.players.filter((p) => p.bot && !p.left);
+    if (bots.length === 0 || Math.random() > 0.5) return;
+    const humans = v.players.filter((p) => !p.bot && !p.left);
+    const pickOne = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)]!;
+    let speaker = mover;
+    let target: string | undefined;
+    let kind: ChatKind;
+    if (mover.bot) {
+      kind = delta > 0 ? (delta >= 5 ? 'bigPlay' : 'ownPlay') : 'ownDraw';
+      if (kind === 'bigPlay') {
+        const others = bots.filter((b) => b.id !== mover.id);
+        if (others.length > 0) speaker = pickOne(others);
+        else kind = 'ownPlay';
+      }
+      if (humans.length > 0) target = pickOne(humans).name;
+    } else {
+      speaker = pickOne(bots);
+      kind = delta >= 5 ? 'bigPlay' : delta > 0 ? 'otherPlay' : 'otherDraw';
+      target = mover.name;
+    }
+    const text = `${speaker.name}: ${pickChatter(kind, Math.random, target)}`;
+    window.clearTimeout(this.chatTimer);
+    this.chatTimer = window.setTimeout(() => {
+      this.chatBubble.textContent = text;
+      this.chatBubble.classList.remove('hidden');
+      this.chatTimer = window.setTimeout(() => this.chatBubble.classList.add('hidden'), 4200);
+    }, Math.max(0, this.busyUntil - performance.now()) + 250);
   }
 
   // ---------- rascunho ----------
