@@ -244,16 +244,15 @@ describe('salvagePlay com checkpoint (jogada válida + outra incompleta)', () =>
 });
 
 describe('findCompactSpot', () => {
-  it('conjuntos novos ficam no mesmo enquadramento, em fileiras separadas, sem sobrepor', () => {
+  it('conjuntos novos ficam num enquadramento compacto, sem sobrepor', () => {
     const table: SetState[] = [];
     for (let i = 0; i < 8; i++) {
       const spot = findCompactSpot(table, 4)!;
       expect(spot).not.toBeNull();
       table.push({ id: i + 1, tiles: [0, 1, 2, 3], x: spot.x, z: spot.z });
     }
-    const xs = table.map((s) => s.x);
-    expect(Math.min(...xs)).toBeGreaterThanOrEqual(10);
-    expect(Math.max(...xs)).toBeLessThanOrEqual(23);
+    // enquadramento compacto: bem mais estreito que a grade toda
+    expect(Math.max(...table.map((s) => s.x + 4)) - Math.min(...table.map((s) => s.x))).toBeLessThanOrEqual(14);
     // mesma fileira: sempre uma pedra de distância entre conjuntos
     for (const a of table) for (const b of table) if (a !== b && a.z === b.z) expect(a.x + a.tiles.length + 1 <= b.x || b.x + b.tiles.length + 1 <= a.x).toBe(true);
     expect(relayout(table).map((s) => [s.x, s.z])).toEqual(table.map((s) => [s.x, s.z]));
