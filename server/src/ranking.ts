@@ -27,6 +27,7 @@ export class Ranking implements DurableObject {
         id TEXT PRIMARY KEY, name TEXT NOT NULL, games INTEGER NOT NULL, wins INTEGER NOT NULL,
         total INTEGER NOT NULL, best INTEGER NOT NULL, updated INTEGER NOT NULL)`,
     );
+    this.sql.exec('CREATE TABLE IF NOT EXISTS names (id TEXT PRIMARY KEY, norm TEXT NOT NULL UNIQUE, name TEXT NOT NULL)');
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -48,6 +49,23 @@ export class Ranking implements DurableObject {
           Date.now(),
         );
       }
+      return new Response('ok');
+    }
+    // reserva de nome: um nome pertence a um id; trocar de nome libera o anterior
+    if (req.method === 'POST' && url.pathname === '/claim') {
+      const b = (await req.json()) as { id?: string; name?: string };
+      const id = String(b.id ?? '').slice(0, 64);
+      const name = String(b.name ?? '').trim().replace(/\s+/g, ' ').slice(0, 16);
+      const norm = name.toLowerCase();
+      if (id.length < 8 || name.length < 2) return Response.json({ ok: false, error: 'inválido' }, { status: 400 });
+      const owner = this.sql.exec<{ id: string }>('SELECT id FROM names WHERE norm = ?', norm).toArray()[0];
+      if (owner && owner.id !== id) return Response.json({ ok: false, error: 'em uso' }, { status: 409 });
+      this.sql.exec('INSERT INTO names (id, norm, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET norm = excluded.norm, name = excluded.name', id, norm, name);
+      return Response.json({ ok: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/release') {
+      const b = (await req.json()) as { name?: string };
+      this.sql.exec('DELETE FROM names WHERE norm = ?', String(b.name ?? '').trim().replace(/\s+/g, ' ').toLowerCase());
       return new Response('ok');
     }
     if (req.method === 'GET' && url.pathname === '/top') {

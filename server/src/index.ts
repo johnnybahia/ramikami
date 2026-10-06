@@ -64,6 +64,19 @@ export default {
       return json(await r.json());
     }
 
+    if (url.pathname === '/api/name/claim' && req.method === 'POST') {
+      const r = await env.RANKING.get(env.RANKING.idFromName('global')).fetch('https://ranking/claim', { method: 'POST', body: await req.text() });
+      return json(await r.json(), r.status);
+    }
+
+    // liberar um nome reservado: curl -X POST -H "X-Admin-Key: <senha>" -d '{"name":"Fulano"}' https://SEU-SITE/api/name/release
+    if (url.pathname === '/api/name/release' && req.method === 'POST') {
+      const key = req.headers.get('X-Admin-Key') ?? '';
+      if (!env.ADMIN_KEY || key.length !== env.ADMIN_KEY.length || key !== env.ADMIN_KEY) return json({ error: 'não autorizado' }, 401);
+      await env.RANKING.get(env.RANKING.idFromName('global')).fetch('https://ranking/release', { method: 'POST', body: await req.text() });
+      return json({ ok: true });
+    }
+
     // zerar o ranking geral: curl -X POST -H "X-Admin-Key: <senha>" https://SEU-SITE/api/ranking/reset
     if (url.pathname === '/api/ranking/reset' && req.method === 'POST') {
       const key = req.headers.get('X-Admin-Key') ?? '';
