@@ -10,12 +10,11 @@ import {
   dropToRack,
   isDirty,
   moveSet,
+  moveStretch,
   newDraft,
   resolveBoardDrop,
   sortRack,
-  splitSet,
   newSetSpot,
-  tidyTable,
   tableWithoutTile,
   MELD_MIN,
   type Draft,
@@ -107,7 +106,6 @@ export class GameScreen {
   private btnConfirm!: HTMLButtonElement;
   private btnDraw!: HTMLButtonElement;
   private btnUndo!: HTMLButtonElement;
-  private btnReset!: HTMLButtonElement;
   private modeBtns = new Map<Mode, HTMLButtonElement>();
   private statusEl = h('div', { class: 'status' });
   private connEl = h('div', { class: 'conn hidden', text: 'Reconectando…' });
@@ -122,7 +120,7 @@ export class GameScreen {
       onRackDrop: (id, i) => this.onRackDrop(id, i),
       onBoardDrop: (id, cx, cz) => this.onBoardDrop(id, cx, cz),
       onSetMove: (sid, dx, dz) => this.onSetMove(sid, dx, dz),
-      onSplit: (sid, i) => this.onSplit(sid, i),
+      onPickBoard: (id, whole) => this.onPickBoard(id, whole),
       onPoolTap: () => this.requestDraw(),
       onPick: (id) => this.onPick(id),
     });
@@ -345,6 +343,7 @@ export class GameScreen {
 
   private onPick(id: number): void {
     if (!this.draft || !this.canPlay() || !this.draft.rack.includes(id)) return;
+    if (this.selectedStretch()) this.selected.clear();
     if (this.selected.has(id)) this.selected.delete(id);
     else if (isJoker(id) && [...this.selected].some(isJoker)) return toast('Marque no máximo 1 coringa.');
     else this.selected.add(id);
@@ -352,9 +351,54 @@ export class GameScreen {
     this.updateActions();
   }
 
-  private playSelected(): void {
+  /** Trecho da mesa que está marcado (um só conjunto, pedras contínuas), ou null. */
+  private selectedStretch(): { setId: number; from: number; to: number } | null {
+    const d = this.draft;
+    if (!d) return null;
+    for (const s of d.table) {
+      const idx = s.tiles.map((t, i) => (this.selected.has(t) ? i : -1)).filter((i) => i >= 0);
+      if (idx.length > 0) return { setId: s.id, from: idx[0]!, to: idx[idx.length - 1]! };
+    }
+    return null;
+  }
+
+  /** Modo Selecionar na mesa: toque marca um trecho contínuo de UM conjunto; segurar marca o conjunto inteiro. */
+  private onPickBoard(id: number, whole: boolean): void {
     const d = this.draft;
     if (!d || !this.canPlay()) return;
+    const set = d.table.find((s) => s.tiles.includes(id));
+    if (!set) return;
+    if (this.lockedSet(d, set.tiles)) return this.deny();
+    const idx = set.tiles.indexOf(id);
+    const cur = this.selectedStretch();
+    let from = idx;
+    let to = idx;
+    if (whole) {
+      from = 0;
+      to = set.tiles.length - 1;
+    } else if (cur && cur.setId === set.id) {
+      if (idx >= cur.from && idx <= cur.to) {
+        if (cur.from === cur.to) {
+          this.selected.clear();
+          this.sync();
+          return this.updateActions();
+        }
+        if (idx === cur.from) from = cur.from + 1, to = cur.to;
+        else if (idx === cur.to) from = cur.from, to = cur.to - 1;
+      } else {
+        from = Math.min(idx, cur.from);
+        to = Math.max(idx, cur.to);
+      }
+    }
+    this.selected.clear();
+    for (let i = from; i <= to; i++) this.selected.add(set.tiles[i]!);
+    this.sync();
+    this.updateActions();
+  }
+
+  private playSelected(): void {
+    const d = this.draft;
+    if (!d || !this.canPlay() || ![...this.selected].every((t) => d.rack.includes(t))) return;
     const r = arrangeTiles([...this.selected], d.melded);
     if (!r.ok) return toast(r.reason);
     this.selected.clear();
@@ -393,14 +437,9 @@ export class GameScreen {
     const s = d?.table.find((x) => x.id === setId);
     if (!d || !s) return;
     if (this.lockedSet(d, s.tiles)) return this.deny();
+    const st = this.selectedStretch();
+    if (st && st.setId === setId) return this.apply(moveStretch(d, setId, st.from, st.to, s.x + st.from + dx, s.z + dz), 'Sem espaço aí.');
     this.apply(moveSet(d, setId, s.x + dx, s.z + dz), 'Sem espaço aí.');
-  }
-
-  private onSplit(setId: number, index: number): void {
-    if (!this.draft) return;
-    const target = this.draft.table.find((x) => x.id === setId);
-    if (target && this.lockedSet(this.draft, target.tiles)) return this.deny();
-    this.apply(splitSet(this.draft, setId, index), 'Não dá para dividir aí.');
   }
 
   private sendDraft(): void {
@@ -431,21 +470,6 @@ export class GameScreen {
     this.sendDraft();
   }
 
-  private doReset(): void {
-    const v = this.view;
-    const d = this.draft;
-    if (!v || !d || !isDirty(d)) return;
-    const rack = [...d.rack, ...d.placed].sort((a, b) => d.baseRack.indexOf(a) - d.baseRack.indexOf(b));
-    this.undo.push(d);
-    const fresh = newDraft(d.baseTable, d.baseRack, d.melded);
-    fresh.rack = rack.filter((id) => d.baseRack.includes(id));
-    this.draft = fresh;
-    this.checkpoint = null;
-    this.sync();
-    this.updateActions();
-    this.sendDraft();
-  }
-
   private doConfirm(): void {
     const d = this.draft;
     if (!d || !this.canPlay()) return;
@@ -468,7 +492,8 @@ export class GameScreen {
     const d = this.draft;
     const v = this.view;
     if (!d || !v) return;
-    for (const id of this.selected) if (!d.rack.includes(id)) this.selected.delete(id);
+    const onTable = new Set(d.table.flatMap((x) => x.tiles));
+    for (const id of this.selected) if (!d.rack.includes(id) && !onTable.has(id)) this.selected.delete(id);
     const st = draftStatus(d);
     const table = this.remoteDraft ?? d.table;
     let valid = st.setValid;
@@ -718,21 +743,13 @@ export class GameScreen {
     const mk = (icon: string, label: string, title: string, fn: () => void): HTMLButtonElement =>
       h('button', { class: 'act2', attrs: { type: 'button', title, 'aria-label': title }, on: { click: fn } }, h('span', { class: 'ic', text: icon }), h('span', { class: 'tx', text: label }));
     this.btnUndo = mk('↶', 'Desfazer', 'Desfazer o último movimento', () => this.doUndo());
-    this.btnReset = mk('⟲', 'Recomeçar', 'Recomeçar a jogada', () => this.doReset());
     const sortNum = mk('123', 'Por número', 'Ordenar o cavalete por número', () => this.draft && this.apply(sortRack(this.draft, 'num')));
     const sortCol = mk('🎨', 'Por cor', 'Ordenar o cavalete por cor', () => this.draft && this.apply(sortRack(this.draft, 'color')));
-    const tidy = mk('▦', 'Arrumar', 'Arrumar a mesa em linhas', () => {
-      if (!this.draft || !this.canPlay()) return;
-      if (this.draft.table.some((t) => this.lockedSet(this.draft!, t.tiles))) return this.deny();
-      this.apply(tidyTable(this.draft), 'Não coube na mesa.');
-    });
     const modeDefs: [Mode, string, string, string][] = [
       ['tile', '✋', 'Mover', 'Mover pedra (segure o dedo na pedra da mesa)'],
-      ['set', '▭', 'Conjunto', 'Mover conjunto inteiro'],
-      ['split', '✂', 'Cortar', 'Dividir conjunto (toque na pedra onde cortar)'],
-      ['pick', '☑', 'Marcar', 'Marcar pedras do cavalete para jogar de uma vez'],
+      ['pick', '☑', 'Selecionar', 'Selecionar pedras: do cavalete para jogar juntas, ou um trecho de um conjunto da mesa para arrastar'],
     ];
-    const modes = h('div', { class: 'moderow' });
+    const modeBtns: HTMLButtonElement[] = [];
     for (const [m, icon, label, title] of modeDefs) {
       const b = mk(icon, label, title, () => {
         this.mode = m;
@@ -741,15 +758,14 @@ export class GameScreen {
         this.updateActions();
       });
       this.modeBtns.set(m, b);
-      modes.append(b);
+      modeBtns.push(b);
     }
     this.btnPlaySel = h('button', { class: 'btn confirm hidden', attrs: { type: 'button' }, on: { click: () => this.playSelected() } });
     this.btnDraw = h('button', { class: 'btn draw', text: 'Comprar', attrs: { type: 'button' }, on: { click: () => this.requestDraw() } });
     this.btnConfirm = h('button', { class: 'btn confirm', text: 'Confirmar', attrs: { type: 'button' }, on: { click: () => this.doConfirm() } });
     this.actionbar.append(
       h('div', { class: 'mainrow' }, this.btnPlaySel, this.btnDraw, this.btnConfirm),
-      h('div', { class: 'toolrow' }, this.btnUndo, this.btnReset, sortNum, sortCol, tidy),
-      modes,
+      h('div', { class: 'toolrow' }, this.btnUndo, sortNum, sortCol, ...modeBtns),
     );
     this.root.append(this.statusEl, this.turnBanner, this.zoomDock);
   }
@@ -762,9 +778,8 @@ export class GameScreen {
     this.actionbar.classList.toggle('hidden', v.phase !== 'playing');
     for (const [m, b] of this.modeBtns) b.classList.toggle('active', m === this.mode);
     this.btnUndo.disabled = !mine || this.undo.length === 0;
-    this.btnReset.disabled = !mine || !isDirty(d);
     this.btnDraw.disabled = !mine;
-    this.btnPlaySel.classList.toggle('hidden', !mine || this.mode !== 'pick' || this.selected.size < 3);
+    this.btnPlaySel.classList.toggle('hidden', !mine || this.mode !== 'pick' || this.selected.size < 3 || !!this.selectedStretch());
     this.btnPlaySel.textContent = `Jogar marcadas (${this.selected.size})`;
     this.btnDraw.textContent = v.poolCount === 0 ? 'Passar' : `Comprar (${v.poolCount})`;
     const st = draftStatus(d);

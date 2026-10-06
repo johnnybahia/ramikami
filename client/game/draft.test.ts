@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { findGuideSpot } from '../../shared/layout';
-import { dropNew, dropOnSet, dropToRack, draftStatus, newDraft, resolveBoardDrop, splitSet, tidyTable, acceptingSets, suggestDrop, newSetSpot } from './draft';
+import { dropNew, dropOnSet, dropToRack, draftStatus, newDraft, resolveBoardDrop, splitSet, moveStretch, tidyTable, acceptingSets, suggestDrop, newSetSpot } from './draft';
 
 const T = (color: number, num: number) => color * 13 + (num - 1);
 
@@ -86,5 +86,33 @@ describe('antes de abrir: a mesa dos outros não é empurrada', () => {
     const mine = n.table.find((s) => s.tiles.includes(T(1, 1)))!;
     expect(mine.z).toBe(6);
     expect(mine.x).toBeGreaterThanOrEqual(14); // sempre uma pedra de distância do jogo antigo (10..12)
+  });
+});
+
+describe('moveStretch (selecionar um trecho e arrastar)', () => {
+  const T = (c: number, n: number) => c * 13 + n - 1;
+  const row = [T(0, 1), T(0, 2), T(0, 3), T(0, 4), T(0, 5), T(0, 6)];
+  const table = [{ id: 1, tiles: row, x: 5, z: 2 }];
+  it('trecho do meio vira um conjunto novo; as pontas ficam onde estavam', () => {
+    const d = newDraft(table, [], true);
+    const n = moveStretch(d, 1, 2, 3, 10, 8)!;
+    expect(n).not.toBeNull();
+    const all = n.table.flatMap((s) => s.tiles).sort((a, b) => a - b);
+    expect(all).toEqual(row.slice().sort((a, b) => a - b));
+    const moved = n.table.find((s) => s.tiles.includes(T(0, 3)))!;
+    expect(moved.tiles).toEqual([T(0, 3), T(0, 4)]);
+    expect(moved.z).toBe(8);
+    expect(n.table.find((s) => s.tiles.includes(T(0, 1)))!.tiles).toEqual([T(0, 1), T(0, 2)]);
+    expect(n.table.find((s) => s.tiles.includes(T(0, 6)))!.tiles).toEqual([T(0, 5), T(0, 6)]);
+    expect(n.table.length).toBe(3);
+  });
+  it('trecho no começo ou no fim deixa uma só sobra; trecho inteiro move o conjunto', () => {
+    const d = newDraft(table, [], true);
+    expect(moveStretch(d, 1, 0, 1, 10, 8)!.table.length).toBe(2);
+    expect(moveStretch(d, 1, 4, 5, 10, 8)!.table.length).toBe(2);
+    const whole = moveStretch(d, 1, 0, 5, 10, 8)!;
+    expect(whole.table.length).toBe(1);
+    expect(whole.table[0]!.z).toBe(8);
+    expect(moveStretch(d, 1, 3, 9, 0, 0)).toBeNull();
   });
 });

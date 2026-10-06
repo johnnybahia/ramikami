@@ -223,13 +223,13 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .pill.menu.dot::after { content: ''; position: absolute; top: 4px; right: 6px; width: 11px; height: 11px; border-radius: 50%; background: #ffd23a; box-shadow: 0 0 0 2px #0a120e; }
 .zoomdock { position: absolute; z-index: 4; right: calc(var(--safe-r) + 8px); bottom: calc(var(--rack-h, 140px) + var(--bar-h, 150px) + 44px); display: flex; flex-direction: column; gap: 8px; }
 .zoomdock .zoom { width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--line); background: rgba(10, 18, 14, 0.7); color: var(--text); font-size: 1.3rem; font-weight: 800; cursor: pointer; backdrop-filter: blur(4px); }
-.actionbar { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 6px; overflow: visible; padding-top: 8px; padding-bottom: 6px; }
+.actionbar { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 4px; overflow: visible; padding-top: 6px; padding-bottom: 4px; }
 .mainrow { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
-.mainrow .btn { min-height: 50px; font-size: 1.02rem; white-space: nowrap; padding: 8px 10px; }
+.mainrow .btn { min-height: 40px; font-size: 0.9rem; white-space: nowrap; padding: 4px 8px; }
 .toolrow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .moderow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
-.act2 { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 48px; padding: 4px 2px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.07); color: var(--text); cursor: pointer; }
-.act2 .ic { font-size: 1.15rem; line-height: 1.1; font-weight: 800; }
+.act2 { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; min-height: 40px; padding: 4px 2px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.07); color: var(--text); cursor: pointer; }
+.act2 .ic { font-size: 1.05rem; line-height: 1.1; font-weight: 800; }
 .act2 .tx { font-size: 0.64rem; font-weight: 600; opacity: 0.85; line-height: 1.1; }
 .act2:disabled { opacity: 0.35; }
 .act2.active { background: var(--gold); color: #1c1608; border-color: transparent; }
@@ -297,7 +297,7 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .playerbar .pbox .ctl { top: calc(100% - 4px); }
 .actionbar { gap: 4px; padding-top: 5px; padding-bottom: 4px; }
 .mainrow { gap: 6px; }
-.mainrow .btn { min-height: 42px; font-size: 0.92rem; padding: 6px 8px; }
+.mainrow .btn { min-height: 38px; font-size: 0.88rem; padding: 4px 8px; }
 .toolrow, .moderow { gap: 4px; }
 .moderow { padding-top: 4px; }
 .act2 { min-height: 38px; padding: 2px; border-radius: 10px; }
