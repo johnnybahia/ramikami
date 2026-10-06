@@ -305,9 +305,24 @@ export class GameScreen {
     this.apply(dropToRack(this.draft, id, index), 'Você só pode devolver ao cavalete pedras que jogou neste turno.');
   }
 
+  /** Antes de abrir (30 pontos) a mesa dos outros não pode ser mexida: só vale o que é feito com as pedras do cavalete. */
+  private lockedSet(d: Draft, tiles: readonly number[]): boolean {
+    return !d.melded && !tiles.every((t) => d.placed.has(t));
+  }
+
+  private deny(): void {
+    toast('Antes de abrir (30 pontos) você só joga pedras do seu cavalete; os jogos da mesa não podem ser mexidos.', 3600);
+    this.sync();
+  }
+
   private onBoardDrop(id: number, cx: number, cz: number): void {
     if (!this.draft || !this.myTurn()) return this.sync();
+    if (!this.draft.melded && this.draft.table.some((s) => s.tiles.includes(id)) && !this.draft.placed.has(id)) return this.deny();
     const act = resolveBoardDrop(tableWithoutTile(this.draft.table, id), cx, cz);
+    if (act.kind === 'insert') {
+      const target = this.draft.table.find((s) => s.id === act.setId);
+      if (target && this.lockedSet(this.draft, target.tiles.filter((t) => t !== id))) return this.deny();
+    }
     const spot = act.kind === 'new' ? newSetSpot(this.draft.table, id, cx, cz) : null;
     this.apply(act.kind === 'insert' ? dropOnSet(this.draft, id, act.setId, act.index) : dropNew(this.draft, id, spot!.x, spot!.z, spot!.exact), 'Sem espaço na mesa.');
   }
@@ -316,11 +331,14 @@ export class GameScreen {
     const d = this.draft;
     const s = d?.table.find((x) => x.id === setId);
     if (!d || !s) return;
+    if (this.lockedSet(d, s.tiles)) return this.deny();
     this.apply(moveSet(d, setId, s.x + dx, s.z + dz), 'Sem espaço aí.');
   }
 
   private onSplit(setId: number, index: number): void {
     if (!this.draft) return;
+    const target = this.draft.table.find((x) => x.id === setId);
+    if (target && this.lockedSet(this.draft, target.tiles)) return this.deny();
     this.apply(splitSet(this.draft, setId, index), 'Não dá para dividir aí.');
   }
 
@@ -627,7 +645,11 @@ export class GameScreen {
     this.btnReset = mk('⟲', 'Recomeçar', 'Recomeçar a jogada', () => this.doReset());
     const sortNum = mk('123', 'Por número', 'Ordenar o cavalete por número', () => this.draft && this.apply(sortRack(this.draft, 'num')));
     const sortCol = mk('🎨', 'Por cor', 'Ordenar o cavalete por cor', () => this.draft && this.apply(sortRack(this.draft, 'color')));
-    const tidy = mk('▦', 'Arrumar', 'Arrumar a mesa em linhas', () => this.draft && this.myTurn() && this.apply(tidyTable(this.draft), 'Não coube na mesa.'));
+    const tidy = mk('▦', 'Arrumar', 'Arrumar a mesa em linhas', () => {
+      if (!this.draft || !this.myTurn()) return;
+      if (this.draft.table.some((t) => this.lockedSet(this.draft!, t.tiles))) return this.deny();
+      this.apply(tidyTable(this.draft), 'Não coube na mesa.');
+    });
     const modeDefs: [Mode, string, string, string][] = [
       ['tile', '✋', 'Mover', 'Mover pedra (segure o dedo na pedra da mesa)'],
       ['set', '▭', 'Conjunto', 'Mover conjunto inteiro'],
