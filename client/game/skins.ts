@@ -9,13 +9,15 @@ export interface Skin {
   swatch: [string, string];
   /** cor de fora da mesa (fundo da cena) */
   bg: string;
+  /** opacidade do escudo na mesa (padrão 0,3; mesas claras pedem mais) */
+  logoAlpha?: number;
 }
 
 export const SKINS: readonly Skin[] = [
   { id: 'verde', name: 'Pano verde', swatch: ['#1d6a47', '#0b1410'], bg: '#0b1410' },
   { id: 'bahia', name: 'Bahia', swatch: ['#0f2c66', '#c8102e'], bg: '#08142e' },
   { id: 'vitoria', name: 'Vitória', swatch: ['#1c0e10', '#c4161c'], bg: '#0d0607' },
-  { id: 'corinthians', name: 'Corinthians', swatch: ['#161616', '#f2f2f2'], bg: '#070707' },
+  { id: 'corinthians', name: 'Corinthians', swatch: ['#f2f2f2', '#161616'], bg: '#0b0b0b', logoAlpha: 0.85 },
   { id: 'palmeiras', name: 'Palmeiras', swatch: ['#0b4a2a', '#f2f2f2'], bg: '#04170d' },
   { id: 'natal', name: 'Natal', swatch: ['#14452e', '#b3202a'], bg: '#0a1f15' },
   { id: 'anonovo', name: 'Ano Novo', swatch: ['#0e1a3a', '#d9b45a'], bg: '#060b1c' },
@@ -61,12 +63,12 @@ const LOOKS: Record<Exclude<SkinId, 'verde'>, Look> = {
     stripes: { color: '#c4161c', alpha: 0.05, step: 46 },
   },
   corinthians: {
-    base: '#161616',
+    base: '#e8e8e8',
     lines: [
-      { color: '#f2f2f2', width: 6, inset: 26 },
-      { color: '#f2f2f2', width: 2, inset: 42 },
+      { color: '#141414', width: 7, inset: 26 },
+      { color: '#141414', width: 2.5, inset: 44 },
     ],
-    glow: 'rgba(255,255,255,0.09)',
+    glow: 'rgba(255,255,255,0.35)',
   },
   palmeiras: {
     base: '#0b4a2a',
@@ -96,12 +98,12 @@ const LOOKS: Record<Exclude<SkinId, 'verde'>, Look> = {
   },
 };
 
-function felt(c: CanvasRenderingContext2D, base: string): void {
+function felt(c: CanvasRenderingContext2D, base: string, noise = 1): void {
   c.fillStyle = base;
   c.fillRect(0, 0, W, H);
   for (let i = 0; i < 230000; i++) {
     const v = Math.random();
-    c.fillStyle = v > 0.5 ? `rgba(255,255,255,${0.02 + Math.random() * 0.04})` : `rgba(0,0,0,${0.03 + Math.random() * 0.06})`;
+    c.fillStyle = v > 0.5 ? `rgba(255,255,255,${(0.02 + Math.random() * 0.04) * noise})` : `rgba(0,0,0,${(0.03 + Math.random() * 0.06) * noise})`;
     c.fillRect(Math.random() * W, Math.random() * H, 1.6, 1.6);
   }
 }
@@ -172,7 +174,7 @@ function drawSkin(id: SkinId): HTMLCanvasElement {
     return cv;
   }
   const look = LOOKS[id];
-  felt(c, look.base);
+  felt(c, look.base, id === 'corinthians' ? 0.3 : 1);
   if (look.stripes) {
     c.fillStyle = look.stripes.color;
     c.globalAlpha = look.stripes.alpha;
@@ -217,6 +219,7 @@ function drawSkin(id: SkinId): HTMLCanvasElement {
 }
 
 interface Entry {
+  id: SkinId;
   tex: THREE.CanvasTexture;
   base: HTMLCanvasElement;
   out: HTMLCanvasElement;
@@ -250,7 +253,7 @@ function paint(e: Entry): void {
     const w = e.logo.naturalWidth * k;
     const h = e.logo.naturalHeight * k;
     c.save();
-    c.globalAlpha = 0.3; // marca d'água: discreta, sem atrapalhar as pedras
+    c.globalAlpha = skinById(e.id).logoAlpha ?? 0.3; // marca d'água: discreta, sem atrapalhar as pedras
     c.drawImage(e.logo, (W - w) / 2, (H - h) / 2, w, h);
     c.restore();
   }
@@ -285,7 +288,7 @@ export function skinTexture(id: SkinId, aniso = 4): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(out);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = aniso;
-  const e: Entry = { tex, base, out, logo: null };
+  const e: Entry = { id, tex, base, out, logo: null };
   cache.set(id, e);
   if (LOGO_SKINS.includes(id)) loadLogo(id, e);
   return tex;
