@@ -1,4 +1,5 @@
 import { BOT_LEVELS, type BotLevel } from '../shared/bot';
+import { SKIN_IDS, type SkinId } from './game/skins';
 import { MAX_PHOTO_CHARS, NAME_MAX } from '../shared/protocol';
 
 export interface Profile {
@@ -84,16 +85,18 @@ export interface A11y {
   contrast: boolean;
   /** tamanho da interface: 0 normal, 1 grande, 2 extra grande */
   size: 0 | 1 | 2;
+  /** pano da mesa */
+  skin: SkinId;
 }
 const SIZE_PCT = [100, 118, 136] as const;
 let a11y: A11y | null = null;
 
 export function loadA11y(): A11y {
   if (a11y) return a11y;
-  a11y = { contrast: false, size: 0 };
+  a11y = { contrast: false, size: 0, skin: 'verde' };
   try {
     const p = JSON.parse(localStorage.getItem(A11Y_KEY) ?? 'null') as Partial<A11y> | null;
-    if (p) a11y = { contrast: p.contrast === true, size: p.size === 1 || p.size === 2 ? p.size : 0 };
+    if (p) a11y = { contrast: p.contrast === true, size: p.size === 1 || p.size === 2 ? p.size : 0, skin: SKIN_IDS.includes(p.skin as SkinId) ? (p.skin as SkinId) : 'verde' };
   } catch {
     /* sem armazenamento: usa o padrão */
   }

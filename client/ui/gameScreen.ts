@@ -151,6 +151,7 @@ export class GameScreen {
     if (this.b.mode === 'online') void this.initRtc();
     if (this.o.profile.photo) this.photos.set(this.o.profile.id, this.o.profile.photo);
     this.scene.setSize(loadA11y().size);
+    this.scene.setSkin(loadA11y().skin);
     this.tick = window.setInterval(() => this.tickUi(), 250);
     this.b.connect();
   }
@@ -433,7 +434,7 @@ export class GameScreen {
         ...(online ? [item('🔗', 'Convidar', () => void this.shareRoom())] : []),
         ...(online ? [item(me?.cam ? '📷' : '🚫', me?.cam ? 'Câmera ligada' : 'Ligar câmera', () => void this.toggleMedia('cam'))] : []),
         ...(online ? [item(me?.mic ? '🎤' : '🔇', me?.mic ? 'Microfone ligado' : 'Ligar microfone', () => void this.toggleMedia('mic'))] : []),
-        item('Aa', 'Letras e cores', () => a11yPanel((a) => { this.scene.setContrast(a.contrast); this.scene.setSize(a.size); })),
+        item('Aa', 'Visual e mesa', () => a11yPanel((a) => { this.scene.setContrast(a.contrast); this.scene.setSize(a.size); this.scene.setSkin(a.skin); })),
         item('↻', hasNew ? 'Atualizar (nova versão)' : 'Atualizar', () => void this.doUpdate()),
         item('✕', 'Sair do jogo', () => this.exit()),
       ),

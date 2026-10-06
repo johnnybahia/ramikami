@@ -68,3 +68,12 @@ scripts/  sw.template.js (service worker), ícones, teste e2e do servidor
 - **Vídeo sem TURN** pode falhar em ~10–20% das redes. **Moderação**: foto e vídeo entre desconhecidos exigem cuidado — salas começam **privadas** (só entra quem tem o código/link) e o anfitrião pode remover jogadores.
 - **Ranking**: a identidade é um ID aleatório guardado no navegador. Limpar os dados do navegador cria um jogador novo, e dois amigos podem combinar partidas. Partidas relâmpago (quem sai logo no começo) não entram.
 - **Testado**: regras/bot/rascunho (unitários), servidor (e2e com 2 clientes), 2 navegadores reais com WebRTC usando câmera/microfone falsos, modo offline sem rede, aviso e aplicação de atualização. **Não testado**: aparelhos reais (principalmente iPhone/Safari), redes reais com NAT, o deploy na Cloudflare em si (só `wrangler dev` local) e desempenho em celulares fracos.
+
+## Zerar o ranking geral
+
+1. Defina uma senha de administrador (uma vez): `npx wrangler secret put ADMIN_KEY -c server/wrangler.toml`
+2. Para zerar: `curl -X POST -H "X-Admin-Key: SUA_SENHA" https://SEU-SITE.workers.dev/api/ranking/reset`
+
+## Sessão melhor de 3/5/7
+
+O anfitrião escolhe no saguão. Todas as partidas combinadas são jogadas; o placar da sessão (vitórias e pontos na mão) vive só enquanto a sala existir. Depois da última, o anfitrião pode pedir "Jogar mais uma": os jogadores confirmam em 30s e o placar continua. Teste de ponta a ponta: `npm run server:dev` e `npm run e2e:series`.

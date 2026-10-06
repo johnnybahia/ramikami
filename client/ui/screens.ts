@@ -2,6 +2,7 @@ import { createRoom, getRanking, listRooms } from '../api';
 import { getPwa, installApp, applyUpdate, isIos, onPwa } from '../pwa';
 import { avatarColor, loadA11y, saveA11y, type A11y, loadOfflineSettings, newId, photoFromFile, saveOfflineSettings, saveProfile, type OfflineSettings, type Profile } from '../store';
 import { BOT_LEVELS, LEVEL_CFG } from '../../shared/bot';
+import { SKINS } from '../game/skins';
 import { NAME_MAX, TURN_SECONDS_OPTIONS, type TurnSeconds } from '../../shared/protocol';
 import { avatarEl, btn, clear, h, toast } from './dom';
 
@@ -258,6 +259,32 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
     saveA11y({ ...loadA11y(), contrast: cb.checked });
     onChange?.(loadA11y());
   });
+  const skinPicker = h('div', { class: 'skins' });
+  const drawSkins = (): void => {
+    clear(skinPicker);
+    for (const k of SKINS) {
+      const on = loadA11y().skin === k.id;
+      skinPicker.append(
+        h(
+          'button',
+          {
+            class: `skin${on ? ' active' : ''}`,
+            attrs: { type: 'button', 'aria-label': k.name },
+            on: {
+              click: () => {
+                saveA11y({ ...loadA11y(), skin: k.id });
+                onChange?.(loadA11y());
+                drawSkins();
+              },
+            },
+          },
+          h('span', { class: 'sw', attrs: { style: `background: linear-gradient(135deg, ${k.swatch[0]} 0 60%, ${k.swatch[1]} 60% 100%)` } }),
+          h('span', { text: k.name }),
+        ),
+      );
+    }
+  };
+  drawSkins();
   const m = modal(
     h(
       'div',
@@ -269,6 +296,8 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
         saveA11y({ ...loadA11y(), size: v });
         onChange?.(loadA11y());
       }),
+      h('label', { class: 'lbl', text: 'Mesa' }),
+      skinPicker,
       h('p', { class: 'hint', text: 'Na mesa: arraste para rolar, pince ou use ＋ − para aproximar, toque duas vezes num conjunto para ampliá-lo. Para mover uma pedra, segure o dedo nela até vibrar.' }),
       h('div', { class: 'row' }, btn('Pronto', () => m.close(), 'primary')),
     ),
