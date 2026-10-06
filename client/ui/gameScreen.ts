@@ -136,6 +136,7 @@ export class GameScreen {
       this.renderBoxes();
     };
     ev.onError = (m) => toast(m);
+    ev.onNotice = (text) => toast(text, 5000);
     ev.onSay = (id, text) => {
       const who = this.view?.players.find((p) => p.id === id)?.name ?? '';
       toast(`${who}: “${text}”`, 2400);
@@ -316,7 +317,7 @@ export class GameScreen {
   }
 
   private sendDraft(): void {
-    if (this.b.mode !== 'online' || !this.myTurn() || !this.draft) return;
+    if (!this.myTurn() || !this.draft) return;
     window.clearTimeout(this.draftTimer);
     this.draftTimer = window.setTimeout(() => this.draft && this.b.draft(relayout(this.draft.table)), 180);
   }
@@ -643,7 +644,7 @@ export class GameScreen {
     } else if (!d.melded) {
       text = `Abertura: ${st.meldPoints}/${MELD_MIN}`;
     } else {
-      text = st.check.reason;
+      text = `${st.check.reason} · no fim do tempo valem só os conjuntos feitos só com sua mão`;
     }
     this.statusEl.textContent = text;
     this.statusEl.classList.toggle('hidden', !text || v.phase !== 'playing');

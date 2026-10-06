@@ -1,6 +1,6 @@
 import { handPoints, newPool, type Rng } from './tiles';
 import { relayout, type SetState } from './layout';
-import { validatePlay } from './rules';
+import { analyzeSet, validatePlay } from './rules';
 
 export const HAND_SIZE = 14;
 export const LEAVE_PENALTY = 50;
@@ -104,6 +104,23 @@ export function playTurn(state: GameState, playerId: string, newTable: readonly 
   if (me.rack.length === 0) finish(s, 'empty');
   else advance(s);
   return { ok: true, state: s };
+}
+
+/**
+ * Fim do tempo com a jogada incompleta: ficam na mesa só os conjuntos válidos montados inteiramente com pedras da
+ * mão do jogador; tudo o que mexeu em jogos já prontos volta ao estado inicial (e as pedras voltam à mão).
+ * Retorna null se nada sobrou (ou se na abertura os conjuntos não somam 30 pontos).
+ */
+export function salvagePlay(state: GameState, playerId: string, draft: readonly SetState[]): GameState | null {
+  if (state.phase !== 'playing' || !Array.isArray(draft)) return null;
+  const cur = currentPlayer(state);
+  if (cur.id !== playerId) return null;
+  const rack = new Set(cur.rack);
+  const pure = draft.filter((s) => s && Array.isArray(s.tiles) && s.tiles.length >= 3 && s.tiles.every((t: number) => rack.has(t)) && analyzeSet(s.tiles).valid);
+  if (pure.length === 0) return null;
+  const next: SetState[] = [...state.table.map((s) => ({ ...s, tiles: s.tiles.slice() })), ...pure.map((s, i) => ({ id: state.table.length + i + 1, tiles: s.tiles.slice(), x: s.x, z: s.z }))];
+  const step = playTurn(state, playerId, next);
+  return step.ok ? step.state : null;
 }
 
 /** Compra 1 pedra (ou passa, se o pote acabou) e encerra o turno. A mesa volta ao estado do início do turno. */

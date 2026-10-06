@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { analyzeSet, arrangeTiles, validatePlay } from './rules';
-import { createGame, drawTurn, playTurn, removePlayer, currentPlayer } from './game';
+import { createGame, drawTurn, playTurn, removePlayer, currentPlayer, salvagePlay } from './game';
 import { botMove, PERSONAS } from './bot';
 import { solveTable } from './solver';
 import { mulberry32, handPoints } from './tiles';
@@ -155,5 +155,31 @@ describe('bots e solucionador', () => {
       }
       console.log(persona.name, 'pior caso ms:', worst.toFixed(1));
     }
+  });
+});
+
+describe('salvagePlay (fim do tempo)', () => {
+  const base = () => {
+    const g = createGame([{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], mulberry32(3));
+    g.turn = 0;
+    g.players[0]!.melded = true;
+    g.table = [S(1, [T(0, 5, 1), T(0, 6, 1), T(0, 7, 1)], 0, 0)];
+    g.players[0]!.rack = [T(1, 9), T(2, 9), T(3, 9), T(0, 8, 1), T(1, 1)];
+    return g;
+  };
+  it('mantém conjunto só da mão e desfaz o que mexeu em jogo pronto', () => {
+    const g = base();
+    const draft = [S(1, [T(0, 5, 1), T(0, 6, 1), T(0, 7, 1), T(0, 8, 1)], 0, 0), S(2, [T(1, 9), T(2, 9), T(3, 9)], 0, 3)];
+    const out = salvagePlay(g, 'a', draft)!;
+    expect(out).not.toBeNull();
+    expect(out.table.find((s) => s.tiles.includes(T(0, 8, 1)))).toBeUndefined();
+    expect(out.table.some((s) => s.tiles.length === 3 && s.tiles.includes(T(1, 9)))).toBe(true);
+    expect(out.players[0]!.rack.sort()).toEqual([T(0, 8, 1), T(1, 1)].sort());
+  });
+  it('sem conjunto só da mão, ou abertura abaixo de 30, volta tudo (null)', () => {
+    const g = base();
+    expect(salvagePlay(g, 'a', [S(1, [T(0, 5, 1), T(0, 6, 1), T(0, 7, 1), T(0, 8, 1)], 0, 0)])).toBeNull();
+    g.players[0]!.melded = false;
+    expect(salvagePlay(g, 'a', [S(1, [T(0, 5, 1), T(0, 6, 1), T(0, 7, 1)], 0, 0), S(2, [T(1, 9), T(2, 9), T(3, 9)], 0, 3)])).toBeNull();
   });
 });

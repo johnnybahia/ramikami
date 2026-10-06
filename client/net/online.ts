@@ -45,6 +45,9 @@ export class OnlineBackend implements Backend {
         case 'photo':
           this.events.onPhoto(m.id, m.data);
           break;
+        case 'notice':
+          this.events.onNotice(m.text);
+          break;
         case 'say':
           this.events.onSay(m.id, m.text);
           break;

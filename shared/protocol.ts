@@ -67,6 +67,7 @@ export type ServerMsg =
   | RoomView
   | { t: 'photo'; id: string; data: string }
   | { t: 'say'; id: string; text: string }
+  | { t: 'notice'; text: string }
   | { t: 'draft'; from: string; table: SetState[] }
   | { t: 'rtc'; from: string; data: unknown }
   | { t: 'error'; msg: string }

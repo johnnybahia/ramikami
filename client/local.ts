@@ -1,7 +1,7 @@
 import type { Backend, BackendEvents } from './backend';
 import { noopEvents } from './backend';
 import { botMove, thinkDelayMs, personaById, PERSONAS, type Persona } from '../shared/bot';
-import { createGame, currentPlayer, drawTurn, playTurn, type GameState } from '../shared/game';
+import { createGame, currentPlayer, drawTurn, playTurn, salvagePlay, type GameState } from '../shared/game';
 import { mulberry32 } from '../shared/tiles';
 import type { SetState } from '../shared/layout';
 import type { RoomPlayer, RoomView, TurnSeconds } from '../shared/protocol';
@@ -19,6 +19,7 @@ export class LocalBackend implements Backend {
   private turnEndsAt: number | null = null;
   private timer = 0;
   private dead = false;
+  private draftTable: SetState[] | null = null;
 
   constructor(
     private profile: Profile,
@@ -76,6 +77,7 @@ export class LocalBackend implements Backend {
   }
 
   private afterChange(): void {
+    this.draftTable = null;
     window.clearTimeout(this.timer);
     if (this.dead) return;
     const g = this.game;
@@ -109,8 +111,15 @@ export class LocalBackend implements Backend {
 
   private timeout(): void {
     if (this.dead || this.game.phase !== 'playing') return;
-    const step = drawTurn(this.game, currentPlayer(this.game).id, true);
-    if (step.ok) this.game = step.state;
+    const cur = currentPlayer(this.game);
+    const kept = this.draftTable ? salvagePlay(this.game, cur.id, this.draftTable) : null;
+    if (kept) {
+      this.game = kept;
+      this.events.onNotice('Tempo esgotado: ficaram na mesa só os conjuntos montados com pedras da sua mão.');
+    } else {
+      const step = drawTurn(this.game, cur.id, true);
+      if (step.ok) this.game = step.state;
+    }
     this.afterChange();
   }
 
@@ -128,7 +137,9 @@ export class LocalBackend implements Backend {
     this.afterChange();
   }
 
-  draft(): void {}
+  draft(table: SetState[]): void {
+    this.draftTable = table;
+  }
   start(): void {}
   seat(): void {}
   settings(): void {}
