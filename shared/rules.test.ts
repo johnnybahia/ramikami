@@ -206,3 +206,39 @@ describe('createGame: quem começa', () => {
     expect(g.turn).toBeLessThan(3);
   });
 });
+
+describe('salvagePlay com checkpoint (jogada válida + outra incompleta)', () => {
+  it('mantém a jogada válida (inclusive encaixe em jogo da mesa) e desfaz só a parte incompleta', () => {
+    const g = createGame([{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], mulberry32(3));
+    g.turn = 0;
+    g.players[0]!.melded = true;
+    g.table = [S(1, [T(0, 5, 1), T(0, 6, 1), T(0, 7, 1)], 0, 0)];
+    g.players[0]!.rack = [T(0, 8, 1), T(1, 9), T(2, 9), T(3, 1), T(3, 2)];
+    // checkpoint: 8 preto encaixado na sequência da mesa (jogada válida)
+    const checkpoint = [S(1, [T(0, 5, 1), T(0, 6, 1), T(0, 7, 1), T(0, 8, 1)], 0, 0)];
+    // rascunho atual: começou outra jogada (9 azul + 9 vermelho soltos, e 1/2 laranja soltos)
+    const draft = [...checkpoint, S(2, [T(1, 9), T(2, 9)], 0, 3), S(3, [T(3, 1), T(3, 2)], 5, 3)];
+    const out = salvagePlay(g, 'a', draft, checkpoint)!;
+    expect(out).not.toBeNull();
+    expect(out.table.find((s) => s.tiles.includes(T(0, 8, 1)))?.tiles.length).toBe(4);
+    expect(out.players[0]!.rack.sort()).toEqual([T(1, 9), T(2, 9), T(3, 1), T(3, 2)].sort());
+  });
+  it('checkpoint + conjunto novo válido formado depois dele', () => {
+    const g = createGame([{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], mulberry32(3));
+    g.turn = 0;
+    g.players[0]!.melded = true;
+    g.table = [S(1, [T(0, 5, 1), T(0, 6, 1), T(0, 7, 1)], 0, 0)];
+    g.players[0]!.rack = [T(0, 8, 1), T(1, 9), T(2, 9), T(3, 9), T(3, 1)];
+    const checkpoint = [S(1, [T(0, 5, 1), T(0, 6, 1), T(0, 7, 1), T(0, 8, 1)], 0, 0)];
+    const draft = [...checkpoint, S(2, [T(1, 9), T(2, 9), T(3, 9)], 0, 3)];
+    const out = salvagePlay(g, 'a', draft, checkpoint)!;
+    expect(out.table.length).toBe(2);
+    expect(out.players[0]!.rack).toEqual([T(3, 1)]);
+  });
+  it('sem checkpoint e sem conjunto só da mão, volta tudo (null)', () => {
+    const g = createGame([{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], mulberry32(3));
+    g.turn = 0;
+    g.players[0]!.melded = true;
+    expect(salvagePlay(g, 'a', [], null)).toBeNull();
+  });
+});

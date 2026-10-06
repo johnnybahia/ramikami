@@ -294,12 +294,46 @@ export class TableScene {
     return this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p) ? p : null;
   }
 
-  private pickTile(region: Region, x: number, y: number): number | null {
-    this.raycaster.setFromCamera(this.ndc(region, x, y), region === 'rack' ? this.rackCam : this.boardCam);
-    const bodies: THREE.Object3D[] = [];
-    for (const t of this.tiles) if (t.present && this.tileScene[t.id] === region) bodies.push(t.body);
-    const hit = this.raycaster.intersectObjects(bodies, false)[0];
-    return hit ? (hit.object.userData.tileId as number) : null;
+  /**
+   * Pedra sob o dedo/mouse. Em vez de exigir acertar o corpo 3D da pedra, escolhe a pedra cujo centro (face de cima)
+   * está mais perto do ponto tocado, medindo em "tamanhos de pedra" na tela, e aceita um pequeno erro:
+   * vale entre pedras coladas, nas bordas e com o dedo grosso.
+   */
+  private pickTile(region: Region, x: number, y: number, touch = false): number | null {
+    const cam = region === 'rack' ? this.rackCam : this.boardCam;
+    cam.updateMatrixWorld();
+    const top = this.rackH > 0 ? (region === 'rack' ? this.H - this.rackH : 0) : 0;
+    const hgt = region === 'rack' ? this.rackH : this.H - this.rackH;
+    const toPx = (v: THREE.Vector3): { sx: number; sy: number } => ({ sx: ((v.x + 1) / 2) * this.W, sy: top + ((1 - v.y) / 2) * hgt });
+    const c = new THREE.Vector3();
+    const e = new THREE.Vector3();
+    let best: number | null = null;
+    let bestM = Infinity;
+    for (const t of this.tiles) {
+      if (!t.present || this.tileScene[t.id] !== region || t.dragging) continue;
+      c.copy(t.group.position);
+      c.y += TILE_H;
+      const g = t.group.scale.x || 1;
+      const pc = toPx(c.clone().project(cam));
+      e.set(c.x + (TILE_W / 2) * g, c.y, c.z);
+      const px = toPx(e.clone().project(cam));
+      e.set(c.x, c.y, c.z + (TILE_D / 2) * g);
+      const pz = toPx(e.clone().project(cam));
+      const hx = Math.max(6, Math.hypot(px.sx - pc.sx, px.sy - pc.sy));
+      const hy = Math.max(6, Math.hypot(pz.sx - pc.sx, pz.sy - pc.sy));
+      // projeta o deslocamento nos eixos da pedra: m = quão fora do centro (1 = borda da pedra)
+      const dx = x - pc.sx;
+      const dy = y - pc.sy;
+      const ux = { x: (px.sx - pc.sx) / hx, y: (px.sy - pc.sy) / hx };
+      const uz = { x: (pz.sx - pc.sx) / hy, y: (pz.sy - pc.sy) / hy };
+      const m = Math.max(Math.abs(dx * ux.x + dy * ux.y) / hx, Math.abs(dx * uz.x + dy * uz.y) / hy);
+      if (m < bestM) {
+        bestM = m;
+        best = t.id;
+      }
+    }
+    // dentro da pedra (m ≤ 1) ou perto dela: mais folga no toque do que no mouse
+    return best !== null && bestM <= (touch ? 1.45 : 1.2) ? best : null;
   }
 
   private pickPool(x: number, y: number): boolean {
@@ -559,7 +593,7 @@ export class TableScene {
     }
     if (this.pointers.size > 1) return;
     const region = this.regionAt(p.y);
-    const id = this.pickTile(region, p.x, p.y);
+    const id = this.pickTile(region, p.x, p.y, e.pointerType !== 'mouse');
     if (id !== null) {
       if (region === 'rack') {
         this.it = { type: 'tile', id, startX: p.x, startY: p.y, active: false };

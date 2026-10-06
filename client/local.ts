@@ -19,6 +19,7 @@ export class LocalBackend implements Backend {
   private timer = 0;
   private dead = false;
   private draftTable: SetState[] | null = null;
+  private checkpoint: SetState[] | null = null;
 
   constructor(
     private profile: Profile,
@@ -80,6 +81,7 @@ export class LocalBackend implements Backend {
 
   private afterChange(): void {
     this.draftTable = null;
+    this.checkpoint = null;
     window.clearTimeout(this.timer);
     if (this.dead) return;
     const g = this.game;
@@ -114,10 +116,10 @@ export class LocalBackend implements Backend {
   private timeout(): void {
     if (this.dead || this.game.phase !== 'playing') return;
     const cur = currentPlayer(this.game);
-    const kept = this.draftTable ? salvagePlay(this.game, cur.id, this.draftTable) : null;
+    const kept = this.draftTable || this.checkpoint ? salvagePlay(this.game, cur.id, this.draftTable, this.checkpoint) : null;
     if (kept) {
       this.game = kept;
-      this.events.onNotice('Tempo esgotado: ficaram na mesa só os conjuntos montados com pedras da sua mão.');
+      this.events.onNotice('Tempo esgotado: ficou na mesa só o que estava completo e válido.');
     } else {
       const step = drawTurn(this.game, cur.id, true);
       if (step.ok) this.game = step.state;
@@ -139,8 +141,9 @@ export class LocalBackend implements Backend {
     this.afterChange();
   }
 
-  draft(table: SetState[]): void {
+  draft(table: SetState[], ok?: SetState[] | null): void {
     this.draftTable = table;
+    this.checkpoint = ok ?? null;
   }
   start(): void {}
   seat(): void {}

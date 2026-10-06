@@ -20,7 +20,7 @@ export interface Backend {
   connect(): void;
   submit(table: SetState[]): void;
   draw(): void;
-  draft(table: SetState[]): void;
+  draft(table: SetState[], ok?: SetState[] | null): void;
   start(): void;
   seat(id: string, seat: number): void;
   settings(opts: { turnSeconds?: TurnSeconds; bestOf?: BestOf }): void;

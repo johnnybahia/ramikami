@@ -114,16 +114,49 @@ export function playTurn(state: GameState, playerId: string, newTable: readonly 
  * mão do jogador; tudo o que mexeu em jogos já prontos volta ao estado inicial (e as pedras voltam à mão).
  * Retorna null se nada sobrou (ou se na abertura os conjuntos não somam 30 pontos).
  */
-export function salvagePlay(state: GameState, playerId: string, draft: readonly SetState[]): GameState | null {
-  if (state.phase !== 'playing' || !Array.isArray(draft)) return null;
+export function salvagePlay(state: GameState, playerId: string, draft: readonly SetState[] | null, checkpoint?: readonly SetState[] | null): GameState | null {
+  if (state.phase !== 'playing') return null;
   const cur = currentPlayer(state);
   if (cur.id !== playerId) return null;
   const rack = new Set(cur.rack);
-  const pure = draft.filter((s) => s && Array.isArray(s.tiles) && s.tiles.length >= 3 && s.tiles.every((t: number) => rack.has(t)) && analyzeSet(s.tiles).valid);
-  if (pure.length === 0) return null;
-  const next: SetState[] = [...state.table.map((s) => ({ ...s, tiles: s.tiles.slice() })), ...pure.map((s, i) => ({ id: state.table.length + i + 1, tiles: s.tiles.slice(), x: s.x, z: s.z }))];
-  const step = playTurn(state, playerId, next);
-  return step.ok ? step.state : null;
+  const clone = (list: readonly SetState[]): SetState[] => list.map((s) => ({ ...s, tiles: s.tiles.slice() }));
+  const tryTable = (table: SetState[]): GameState | null => {
+    const step = playTurn(state, playerId, table);
+    return step.ok ? step.state : null;
+  };
+  /** conjuntos válidos do rascunho feitos só com pedras da mão que ainda não estão em `base` */
+  const pureSets = (base: readonly SetState[]): SetState[] => {
+    if (!Array.isArray(draft)) return [];
+    const used = new Set<number>();
+    for (const s of base) for (const t of s.tiles) used.add(t);
+    const out: SetState[] = [];
+    for (const s of draft) {
+      if (!s || !Array.isArray(s.tiles) || s.tiles.length < 3) continue;
+      if (!s.tiles.every((t: number) => rack.has(t) && !used.has(t))) continue;
+      if (!analyzeSet(s.tiles).valid) continue;
+      for (const t of s.tiles) used.add(t);
+      out.push({ ...s, tiles: s.tiles.slice() });
+    }
+    return out;
+  };
+  const number = (list: SetState[]): SetState[] => list.map((s, i) => ({ ...s, id: i + 1 }));
+
+  // 1) a última jogada completa e válida (checkpoint) + conjuntos novos válidos feitos só com a mão
+  if (Array.isArray(checkpoint) && checkpoint.length > 0) {
+    const cp = clone(checkpoint);
+    const extra = pureSets(cp);
+    if (extra.length > 0) {
+      const r = tryTable(number([...cp, ...extra]));
+      if (r) return r;
+    }
+    // 2) só o checkpoint
+    const r2 = tryTable(number(cp));
+    if (r2) return r2;
+  }
+  // 3) mesa original + conjuntos válidos feitos só com a mão
+  const extra = pureSets(state.table);
+  if (extra.length === 0) return null;
+  return tryTable(number([...clone(state.table), ...extra]));
 }
 
 /** Compra 1 pedra (ou passa, se o pote acabou) e encerra o turno. A mesa volta ao estado do início do turno. */

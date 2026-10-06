@@ -67,6 +67,8 @@ export class GameScreen {
   private receivedAt = 0;
   private draft: Draft | null = null;
   private undo: Draft[] = [];
+  /** última jogada completa e válida do rascunho: é o que fica na mesa se o tempo acabar */
+  private checkpoint: SetState[] | null = null;
   private selected = new Set<number>();
   private botLevel: BotLevel = 'normal';
   private btnPlaySel!: HTMLButtonElement;
@@ -239,6 +241,7 @@ export class GameScreen {
       this.sig = sig;
       this.remoteDraft = null;
       this.undo = [];
+      this.checkpoint = null;
       const order = new Map<number, number>();
       this.draft?.rack.forEach((id, i) => order.set(id, i));
       const rack = v.rack.slice().sort((a, b) => (order.get(a) ?? 1000 + a) - (order.get(b) ?? 1000 + b));
@@ -270,6 +273,7 @@ export class GameScreen {
     this.undo.push(this.draft);
     if (this.undo.length > 80) this.undo.shift();
     this.draft = next;
+    if (draftStatus(next).check.ok) this.checkpoint = relayout(next.table);
     this.sync();
     this.updateActions();
     this.sendDraft();
@@ -320,13 +324,26 @@ export class GameScreen {
   private sendDraft(): void {
     if (!this.myTurn() || !this.draft) return;
     window.clearTimeout(this.draftTimer);
-    this.draftTimer = window.setTimeout(() => this.draft && this.b.draft(relayout(this.draft.table)), 180);
+    this.draftTimer = window.setTimeout(() => this.draft && this.b.draft(relayout(this.draft.table), this.checkpoint), 180);
+  }
+
+  /** Depois de desfazer: vale a jogada válida mais recente que ainda existe no histórico (ou nenhuma). */
+  private recomputeCheckpoint(): void {
+    this.checkpoint = null;
+    const chain = [this.draft, ...this.undo.slice().reverse()];
+    for (const d of chain) {
+      if (d && draftStatus(d).check.ok) {
+        this.checkpoint = relayout(d.table);
+        return;
+      }
+    }
   }
 
   private doUndo(): void {
     const prev = this.undo.pop();
     if (!prev) return;
     this.draft = prev;
+    this.recomputeCheckpoint();
     this.sync();
     this.updateActions();
     this.sendDraft();
@@ -341,6 +358,7 @@ export class GameScreen {
     const fresh = newDraft(d.baseTable, d.baseRack, d.melded);
     fresh.rack = rack.filter((id) => d.baseRack.includes(id));
     this.draft = fresh;
+    this.checkpoint = null;
     this.sync();
     this.updateActions();
     this.sendDraft();

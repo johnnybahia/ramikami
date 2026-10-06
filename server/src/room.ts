@@ -75,6 +75,8 @@ export class GameRoom implements DurableObject {
   private photos: Record<string, string> = {};
   /** última mesa em rascunho do jogador da vez (só em memória: se o servidor reiniciar, vale o estado inicial) */
   private draftTable: SetState[] | null = null;
+  /** última jogada completa e válida do rascunho (o que fica na mesa se o tempo acabar) */
+  private checkpoint: SetState[] | null = null;
   private loaded: Promise<void>;
 
   constructor(
@@ -410,6 +412,7 @@ export class GameRoom implements DurableObject {
         const table = sanitizeTable(msg.table);
         if (!table) return;
         this.draftTable = table;
+        this.checkpoint = msg.ok ? sanitizeTable(msg.ok) : null;
         for (const [id, other] of this.online()) if (id !== me) this.send(other, { t: 'draft', from: me, table });
         return;
       }
@@ -568,6 +571,7 @@ export class GameRoom implements DurableObject {
     const s = this.s!;
     s.game = g;
     this.draftTable = null;
+    this.checkpoint = null;
     if (g.phase === 'ended') {
       s.phase = 'ended';
       s.turnEndsAt = null;
@@ -658,11 +662,11 @@ export class GameRoom implements DurableObject {
       return;
     }
     const cur = currentPlayer(s.game);
-    // tempo esgotado: ficam só os conjuntos feitos inteiramente com pedras da mão; o resto volta ao início do turno
-    const kept = this.draftTable ? salvagePlay(s.game, cur.id, this.draftTable) : null;
+    // tempo esgotado: fica na mesa a última jogada completa e válida (e conjuntos novos válidos só da mão); só a parte não finalizada volta
+    const kept = this.draftTable || this.checkpoint ? salvagePlay(s.game, cur.id, this.draftTable, this.checkpoint) : null;
     if (kept) {
       const ws = this.online().get(cur.id);
-      if (ws) this.send(ws, { t: 'notice', text: 'Tempo esgotado: ficaram na mesa só os conjuntos montados com pedras da sua mão. O resto voltou ao início da jogada.' });
+      if (ws) this.send(ws, { t: 'notice', text: 'Tempo esgotado: sua jogada válida ficou na mesa; só a parte não finalizada voltou.' });
       await this.afterGameChange(kept);
       return;
     }
