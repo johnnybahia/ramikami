@@ -288,7 +288,8 @@ describe('grade: packRows e relayout', () => {
   });
 });
 
-import { CHATTER, CHATTER_NAMED, pickChatter } from './chatter';
+import { CHATTER, CHATTER_NAMED, decideChatter, pickChatter } from './chatter';
+import type { RoomView, RoomPlayer } from './protocol';
 describe('chatter', () => {
   it('tem ~50 frases e sorteia de cada tipo', () => {
     const all = Object.values(CHATTER).flat();
@@ -302,5 +303,30 @@ describe('chatter', () => {
       expect(pickChatter(k, () => 0, 'Johnny')).toContain('Johnny');
       expect(pickChatter(k, () => 0.99, 'Johnny')).not.toContain('{nome}');
     }
+  });
+  const pl = (id: string, bot: boolean, rackCount: number, melded = true): RoomPlayer => ({ id, name: id, seat: 0, connected: true, cam: false, mic: false, isHost: false, rackCount, melded, left: false, bot });
+  const view = (players: RoomPlayer[], turnId: string, over: Partial<RoomView> = {}): RoomView => ({ t: 'state', code: 'X', phase: 'playing', hostId: 'h', turnSeconds: 60, bestOf: 3, orderLocked: false, isPublic: false, you: 'h', players, rack: [], table: [], poolCount: 10, turnId, turnNo: 1, turnEndsAt: null, serverNow: 0, ...over } as RoomView);
+  it('decideChatter: última pedra do humano → bot avisa, com prioridade', () => {
+    const prev = view([pl('h', false, 4), pl('b', true, 8)], 'h');
+    const now = view([pl('h', false, 1), pl('b', true, 8)], 'b', { turnNo: 2 });
+    const p = decideChatter(prev, now, 0, () => 0)!;
+    expect(p.kind).toBe('otherLast');
+    expect(p.speakerId).toBe('b');
+    expect(p.target).toBe('h');
+    expect(p.priority).toBe(true);
+  });
+  it('decideChatter: fim de partida, bot vence → botWon dirigido ao humano', () => {
+    const prev = view([pl('h', false, 5), pl('b', true, 2)], 'b');
+    const now = view([pl('h', false, 5), pl('b', true, 0)], 'b', { phase: 'ended', result: { winners: ['b'], points: { h: 5, b: 0 }, left: [], reason: 'empty' } as never });
+    const p = decideChatter(prev, now, 0, () => 0)!;
+    expect(p.kind).toBe('botWon');
+    expect(p.target).toBe('h');
+  });
+  it('decideChatter: bot abre o jogo; 2 compras seguidas de humano → otherStreak; sem bots → nada', () => {
+    const o = decideChatter(view([pl('b', true, 12, false), pl('h', false, 9)], 'b'), view([pl('b', true, 8), pl('h', false, 9)], 'h', { turnNo: 2 }), 0, () => 0)!;
+    expect(o.kind).toBe('ownOpened');
+    const st = decideChatter(view([pl('h', false, 9), pl('b', true, 9)], 'h'), view([pl('h', false, 10), pl('b', true, 9)], 'b', { turnNo: 2 }), 2, () => 0)!;
+    expect(st.kind).toBe('otherStreak');
+    expect(decideChatter(view([pl('h', false, 9), pl('g', false, 9)], 'h'), view([pl('h', false, 10), pl('g', false, 9)], 'g', { turnNo: 2 }), 0, () => 0)).toBeNull();
   });
 });

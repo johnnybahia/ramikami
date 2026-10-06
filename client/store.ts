@@ -87,16 +87,18 @@ export interface A11y {
   size: 0 | 1 | 2;
   /** pano da mesa */
   skin: SkinId;
+  /** falas dos bots no balão sob a barra de jogadores */
+  chat: boolean;
 }
 const SIZE_PCT = [100, 118, 136] as const;
 let a11y: A11y | null = null;
 
 export function loadA11y(): A11y {
   if (a11y) return a11y;
-  a11y = { contrast: false, size: 0, skin: 'verde' };
+  a11y = { contrast: false, size: 0, skin: 'verde', chat: true };
   try {
     const p = JSON.parse(localStorage.getItem(A11Y_KEY) ?? 'null') as Partial<A11y> | null;
-    if (p) a11y = { contrast: p.contrast === true, size: p.size === 1 || p.size === 2 ? p.size : 0, skin: SKIN_IDS.includes(p.skin as SkinId) ? (p.skin as SkinId) : 'verde' };
+    if (p) a11y = { contrast: p.contrast === true, size: p.size === 1 || p.size === 2 ? p.size : 0, skin: SKIN_IDS.includes(p.skin as SkinId) ? (p.skin as SkinId) : 'verde', chat: p.chat !== false };
   } catch {
     /* sem armazenamento: usa o padrão */
   }
