@@ -157,6 +157,8 @@ export class Tile {
   delay = 0;
   /** velocidade da suavização (padrão 16; menor = mais lento) */
   speed = 16;
+  /** anda um pouco acima da mesa enquanto viaja (não atravessa as outras pedras) */
+  hop = false;
 
   constructor(
     readonly id: number,
@@ -203,11 +205,15 @@ export class Tile {
     }
     const k = 1 - Math.exp(-dt * this.speed);
     g.position.lerp(this.target, k);
+    if (this.hop) g.position.y = this.target.y + Math.min(1.5, Math.hypot(this.target.x - g.position.x, this.target.z - g.position.z) * 0.35);
     g.rotation.y += (this.targetRotY - g.rotation.y) * k;
     const s = g.scale.x + (this.targetScale - g.scale.x) * k;
     g.scale.setScalar(s);
     const moving = g.position.distanceToSquared(this.target) > 1e-5 || Math.abs(s - this.targetScale) > 1e-3 || Math.abs(this.targetRotY - g.rotation.y) > 1e-3;
-    if (!moving) this.speed = 16;
+    if (!moving) {
+      this.speed = 16;
+      this.hop = false;
+    }
     return moving;
   }
 }
