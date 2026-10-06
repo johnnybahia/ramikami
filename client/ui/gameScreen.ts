@@ -26,7 +26,7 @@ import { personaAvatar } from '../botAvatars';
 import { a11yPanel } from './screens';
 import { relayout, type SetState } from '../../shared/layout';
 import { TURN_SECONDS_OPTIONS, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
-import { applyUpdate, onPwa, type PwaState } from '../pwa';
+import { applyUpdate, checkForUpdate, onPwa, type PwaState } from '../pwa';
 import { avatarColor, loadA11y, type Profile } from '../store';
 import { avatarEl, btn, clear, h, toast } from './dom';
 
@@ -93,7 +93,7 @@ export class GameScreen {
   private timerPill = h('div', { class: 'pill timer', text: '' });
   private codePill = h('button', { class: 'pill code', attrs: { type: 'button' } });
   private poolPill = h('button', { class: 'pill pool', attrs: { type: 'button' } });
-  private updatePill = h('button', { class: 'pill update hidden', attrs: { type: 'button' } });
+  private updatePill = h('button', { class: 'pill update', attrs: { type: 'button' } });
   private btnConfirm!: HTMLButtonElement;
   private btnDraw!: HTMLButtonElement;
   private btnUndo!: HTMLButtonElement;
@@ -409,10 +409,7 @@ export class GameScreen {
     const exit = h('button', { class: 'pill exit', text: '✕', attrs: { type: 'button', 'aria-label': 'Sair' }, on: { click: () => this.exit() } });
     this.codePill.addEventListener('click', () => void this.shareRoom());
     this.poolPill.addEventListener('click', () => this.requestDraw());
-    this.updatePill.addEventListener('click', () => {
-      if (this.view?.phase === 'playing') return toast('A atualização será aplicada quando a partida terminar.');
-      void applyUpdate();
-    });
+    this.updatePill.addEventListener('click', () => void this.doUpdate());
     const fit = h('button', { class: 'pill', text: '⌖', attrs: { type: 'button', 'aria-label': 'Ajustar câmera' }, on: { click: () => this.scene.fit() } });
     const zoomIn = h('button', { class: 'pill zoom', text: '＋', attrs: { type: 'button', 'aria-label': 'Aproximar' }, on: { click: () => this.scene.zoomBy(0.75) } });
     const zoomOut = h('button', { class: 'pill zoom', text: '－', attrs: { type: 'button', 'aria-label': 'Afastar' }, on: { click: () => this.scene.zoomBy(1.33) } });
@@ -432,15 +429,28 @@ export class GameScreen {
     this.tickUi();
   }
 
-  private renderUpdate(): void {
-    const p = this.pwa;
-    const show = !!p?.update;
-    this.updatePill.classList.toggle('hidden', !show);
-    if (show) {
-      const playing = this.view?.phase === 'playing';
-      this.updatePill.textContent = playing ? 'Nova versão (após a partida)' : 'Atualizar';
-      this.updatePill.classList.toggle('ready', !playing);
+  /** Botão "Atualizar": procura a versão mais nova e, se houver, recarrega (com aviso se a partida está em andamento). */
+  private async doUpdate(): Promise<void> {
+    const playing = this.view?.phase === 'playing';
+    if (!this.pwa?.update) {
+      toast('Procurando atualização…', 1500);
+      const r = await checkForUpdate();
+      if (r === 'none') return toast('Você já está com a versão mais recente.');
     }
+    const msg =
+      this.b.mode === 'offline'
+        ? 'Atualizar agora recarrega o jogo e esta partida contra bots será perdida. Continuar?'
+        : playing
+          ? 'Atualizar agora recarrega o jogo. Você volta para a mesma sala em seguida, mas perde o rascunho da jogada atual. Continuar?'
+          : 'Nova versão pronta. Atualizar agora?';
+    if (!window.confirm(msg)) return;
+    void applyUpdate();
+  }
+
+  private renderUpdate(): void {
+    const hasNew = !!this.pwa?.update;
+    this.updatePill.textContent = hasNew ? '↻ Nova versão' : '↻ Atualizar';
+    this.updatePill.classList.toggle('ready', hasNew);
   }
 
   private async shareRoom(): Promise<void> {
