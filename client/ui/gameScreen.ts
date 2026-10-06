@@ -73,6 +73,7 @@ export class GameScreen {
   /** a próxima atualização da cena vem de uma jogada de outro jogador: anima devagar */
   private slowFlag = false;
   /** até quando a animação lenta da jogada de outro jogador ainda está rolando (a minha vez só libera depois) */
+  private busyTurnNo = -1;
   private busyUntil = 0;
   private busyTimer = 0;
   private selected = new Set<number>();
@@ -270,6 +271,7 @@ export class GameScreen {
       const ac = animCounts(prev.table, v.table);
       const ms = animMsFor(ac.fresh, ac.moved);
       this.busyUntil = performance.now() + ms;
+      this.busyTurnNo = v.turnNo;
       window.clearTimeout(this.busyTimer);
       this.busyTimer = window.setTimeout(() => this.afterBusy(), ms + 60);
     }
@@ -633,7 +635,11 @@ export class GameScreen {
       // o servidor soma o tempo da animação da jogada anterior: o relógio só começa a descer depois que as pedras terminam de entrar
       const cur = v.players.find((p) => p.id === v.turnId);
       const limit = cur?.bot ? BOT_TURN_SECONDS : v.turnSeconds;
-      if (limit > 0) remaining = Math.min(remaining, limit);
+      if (limit > 0) {
+        remaining = Math.min(remaining, limit);
+        // a contagem só parte do tempo cheio depois que a última pedra da jogada anterior cair
+        if (this.busyTurnNo === v.turnNo) remaining = Math.min(remaining, Math.max(0, Math.ceil(limit - (performance.now() - this.busyUntil) / 1000)));
+      }
     }
     this.timerPill.classList.toggle('hidden', remaining === null || v.phase !== 'playing');
     if (remaining !== null) {

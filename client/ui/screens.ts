@@ -177,7 +177,7 @@ function offlinePanel(a: MenuActions): void {
       h('label', { class: 'lbl', text: 'Nível dos bots' }),
       segmented(BOT_LEVELS.map((l) => ({ value: l, label: LEVEL_CFG[l].label })), cfg.level, (v) => (cfg.level = v)),
       h('label', { class: 'lbl', text: 'Tempo por jogada (bots sempre 30s)' }),
-      segmented([{ value: 30, label: '30s' }, { value: 60, label: '60s' }, { value: 0, label: 'Sem limite' }] as const, cfg.turnSeconds, (v) => (cfg.turnSeconds = v)),
+      segmented([{ value: 60, label: '60s' }, { value: 120, label: '120s' }, { value: 0, label: 'Sem limite' }] as const, cfg.turnSeconds, (v) => (cfg.turnSeconds = v)),
       h('div', { class: 'row' }, btn('Começar', () => { saveOfflineSettings(cfg); m.close(); a.startOffline(cfg); }, 'primary'), btn('Cancelar', () => m.close(), 'ghost')),
     ),
   );

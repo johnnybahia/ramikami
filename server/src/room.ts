@@ -6,6 +6,7 @@ import {
   BEST_OF_OPTIONS,
   BOT_TURN_SECONDS,
   animMsFor,
+  ANIM_SAFETY_MS,
   CONFIRM_SECONDS,
   MAX_ROOM_PLAYERS,
   NAME_MAX,
@@ -60,6 +61,8 @@ const MAX_MSG = 100_000;
 
 const cleanName = (n: unknown): string => String(n ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, NAME_MAX) || 'Jogador';
 const validPhoto = (p: unknown): p is string => typeof p === 'string' && p.length <= MAX_PHOTO_CHARS && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(p);
+
+const animBonus = (fresh: number, moved: number): number => (fresh + moved > 0 ? animMsFor(fresh, moved) + ANIM_SAFETY_MS : 0);
 
 function sanitizeTable(raw: unknown): SetState[] | null {
   if (!Array.isArray(raw) || raw.length > 60) return null;
@@ -401,7 +404,7 @@ export class GameRoom implements DurableObject {
         const step = playTurn(s.game, me, table);
         if (!step.ok) return this.err(ws, step.reason);
         const ac = animCounts(s.game.table, step.state.table);
-        await this.afterGameChange(step.state, animMsFor(ac.fresh, ac.moved));
+        await this.afterGameChange(step.state, animBonus(ac.fresh, ac.moved));
         return;
       }
       case 'draw': {
@@ -775,6 +778,6 @@ export class GameRoom implements DurableObject {
       for (const ws of this.online().values()) this.send(ws, { t: 'say', id: cur.id, text });
     }
     const ac = animCounts(g.table, step.state.table);
-    await this.afterGameChange(step.state, animMsFor(ac.fresh, ac.moved));
+    await this.afterGameChange(step.state, animBonus(ac.fresh, ac.moved));
   }
 }

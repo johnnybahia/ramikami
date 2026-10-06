@@ -15,7 +15,7 @@ class Client {
   async until(fn, ms = 4000) { const t = Date.now(); while (Date.now() - t < ms) { if (this.state && fn(this.state)) return true; await sleep(30); } return false; }
 }
 
-const create = await (await fetch(`${BASE}/api/rooms`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ turnSeconds: 30, isPublic: true }) })).json();
+const create = await (await fetch(`${BASE}/api/rooms`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ turnSeconds: 120, isPublic: true }) })).json();
 const code = create.code;
 ok(/^[A-Z0-9]{5}$/.test(code), `sala criada ${code}`);
 const tiny = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
@@ -44,8 +44,8 @@ A.send({ t: 'shuffle' });
 ok(await A.until((s) => s.orderLocked === false), 'anfitrião pode sortear de novo');
 A.send({ t: 'settings', turnSeconds: 60 });
 ok(await B.until((s) => s.turnSeconds === 60), 'anfitrião muda tempo para 60s');
-A.send({ t: 'settings', turnSeconds: 30 });
-await B.until((s) => s.turnSeconds === 30);
+A.send({ t: 'settings', turnSeconds: 120 });
+await B.until((s) => s.turnSeconds === 120);
 
 B.send({ t: 'media', cam: true, mic: false });
 ok(await A.until((s) => s.players.find((p) => p.id === 'player-bbbbbbbb').cam === true), 'estado de câmera de B chega para A');
@@ -62,7 +62,7 @@ ok(A.state.rack.length === 14 && B.state.rack.length === 14, 'cada um recebe 14 
 ok(A.state.rack.every((t) => !B.state.rack.includes(t)), 'cavaletes distintos');
 ok(A.state.players.every((p) => p.rackCount === 14), 'contagem de pedras pública');
 ok(!JSON.stringify(A.state).includes(JSON.stringify(B.state.rack)), 'cavalete do oponente não vaza no estado de A');
-ok(A.state.turnEndsAt - A.state.serverNow > 28000, 'prazo do turno ~30s definido pelo servidor');
+ok(A.state.turnEndsAt - A.state.serverNow > 118000, 'prazo do turno ~120s definido pelo servidor');
 ok(A.state.players.every((p, i, arr) => i === 0 || arr[i - 1].seat < p.seat), 'ordem do jogo segue a sequência definida');
 
 const cur = () => (A.state.turnId === A.id ? A : B);
