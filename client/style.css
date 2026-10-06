@@ -322,3 +322,10 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .playerbar .pbox.turn .pmeta { color: var(--gold); font-weight: 700; }
 @keyframes turn-ring { from { box-shadow: 0 0 0 3px rgba(231, 194, 106, 0.35), 0 0 10px 2px rgba(231, 194, 106, 0.35); } to { box-shadow: 0 0 0 4px rgba(231, 194, 106, 0.7), 0 0 22px 6px rgba(231, 194, 106, 0.7); } }
 @media (prefers-reduced-motion: reduce) { .playerbar .pbox.turn .frame { animation: none; } }
+
+/* ---- nome do jogador em pedrinhas, abaixo do logo ---- */
+.logo-name { --nt: 32px; display: flex; flex-wrap: wrap; justify-content: center; gap: calc(var(--nt) * 0.16); margin-top: 18px; }
+.nt { width: var(--nt); height: calc(var(--nt) * 1.38); display: grid; place-items: center; background: linear-gradient(160deg, #fbf5e4, #ecdfbf); border-radius: calc(var(--nt) * 0.17); font: 800 calc(var(--nt) * 0.62) var(--serif); box-shadow: 0 calc(var(--nt) * 0.1) 0 #c7b78d, 0 calc(var(--nt) * 0.2) calc(var(--nt) * 0.38) rgba(0, 0, 0, 0.5); transform: rotate(var(--r, 0deg)); }
+.nt.c0 { color: #d12b2b; --r: -3deg; } .nt.c1 { color: #1f63c9; --r: 2deg; } .nt.c2 { color: #1b1b22; --r: -2deg; } .nt.c3 { color: #e58a1c; --r: 3deg; }
+.nt-gap { width: calc(var(--nt) * 0.5); }
+.name-preview { margin: 6px 0 2px; min-height: 60px; display: grid; place-items: center; }
