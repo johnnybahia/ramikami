@@ -99,8 +99,8 @@ export class OnlineBackend implements Backend {
   draw(): void {
     this.send({ t: 'draw' });
   }
-  draft(table: SetState[]): void {
-    this.send({ t: 'draft', table });
+  draft(table: SetState[], ok?: SetState[] | null): void {
+    this.send({ t: 'draft', table, ok: ok ?? null });
   }
   start(): void {
     this.send({ t: 'start' });

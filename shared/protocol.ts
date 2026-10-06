@@ -93,7 +93,7 @@ export type ClientMsg =
   | { t: 'endSession' }
   | { t: 'submit'; table: SetState[] }
   | { t: 'draw' }
-  | { t: 'draft'; table: SetState[] }
+  | { t: 'draft'; table: SetState[]; ok?: SetState[] | null }
   | { t: 'media'; cam: boolean; mic: boolean }
   | { t: 'rtc'; to: string; data: unknown }
   | { t: 'kick'; id: string }
