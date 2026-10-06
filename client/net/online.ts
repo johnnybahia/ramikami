@@ -17,7 +17,17 @@ export class OnlineBackend implements Backend {
   constructor(
     private code: string,
     private profile: Profile,
-  ) {}
+  ) {
+    // voltou para o jogo (ex.: depois de mandar o convite): reconecta já, sem esperar o próximo ciclo
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || this.closedByUs) return;
+      if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
+        window.clearTimeout(this.reconnectTimer);
+        this.retry = 0;
+        this.connect();
+      }
+    });
+  }
 
   connect(): void {
     this.closedByUs = false;

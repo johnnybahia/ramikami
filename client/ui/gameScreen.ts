@@ -724,7 +724,7 @@ export class GameScreen {
       );
     }
     const start = btn('Iniciar partida', () => this.b.start(), 'primary');
-    start.disabled = v.players.length < 2;
+    start.disabled = v.players.filter((p) => p.connected || p.bot).length < 2;
     const actions = host
       ? h('div', { class: 'row' }, btn('Posições na mesa', () => this.openSeats()), start)
       : h('p', { class: 'muted', text: 'Aguardando o anfitrião iniciar a partida…' });
