@@ -1,19 +1,19 @@
 // Simula partidas bot x bot para medir a força de cada nível: npx vite-node scripts/sim-bots.ts [partidas]
 import { createGame, playTurn, drawTurn, currentPlayer } from '../shared/game';
-import { botMove, personaById, type PersonaId } from '../shared/bot';
+import { botMove, LEVEL_CFG, type BotLevel } from '../shared/bot';
 import { mulberry32 } from '../shared/tiles';
 
 const N = Number(process.argv[2] ?? 300);
 const MAX_TURNS = 600;
 
-function play(levels: PersonaId[], seed: number) {
+function play(levels: BotLevel[], seed: number) {
   const rng = mulberry32(seed);
   let g = createGame(levels.map((_, i) => ({ id: `p${i}`, name: `p${i}`, isBot: true })), rng);
   let guard = 0;
   while (g.phase === 'playing' && guard++ < MAX_TURNS) {
     const cur = currentPlayer(g);
     const lvl = levels[Number(cur.id.slice(1))]!;
-    const t = botMove(g, personaById(lvl)!, rng);
+    const t = botMove(g, LEVEL_CFG[lvl], rng);
     let step = t ? playTurn(g, cur.id, t) : null;
     if (!step || !step.ok) step = drawTurn(g, cur.id);
     if (!step.ok) break;
@@ -23,7 +23,7 @@ function play(levels: PersonaId[], seed: number) {
 }
 
 const FILTER = process.argv[3] ?? '';
-function run(label: string, levels: PersonaId[]) {
+function run(label: string, levels: BotLevel[]) {
   if (FILTER && !label.includes(FILTER)) return;
   const wins = levels.map(() => 0);
   const pts = levels.map(() => 0);
@@ -50,10 +50,9 @@ function run(label: string, levels: PersonaId[]) {
   levels.forEach((l, k) => console.log(`  ${l.padEnd(6)} vitórias ${((wins[k]! / Math.max(ended, 1)) * 100).toFixed(1)}%  pontos médios na mão ${(pts[k]! / Math.max(ended, 1)).toFixed(1)}`));
 }
 
-run('Davi x Mestre', ['davi', 'mestre']);
-run('Jorge x Mestre', ['jorge', 'mestre']);
-run('Luna x Mestre', ['luna', 'mestre']);
-run('Marina x Mestre', ['marina', 'mestre']);
-run('Luna x Marina', ['luna', 'marina']);
-run('Mesa de 4', ['davi', 'jorge', 'luna', 'marina']);
-run('Controle: Mestre x Mestre', ['mestre', 'mestre']);
+run('Fácil x Médio', ['easy', 'normal']);
+run('Médio x Difícil', ['normal', 'hard']);
+run('Difícil x Mestre', ['hard', 'master']);
+run('Médio x Mestre', ['normal', 'master']);
+run('Mesa de 4', ['easy', 'normal', 'hard', 'master']);
+run('Controle: Mestre x Mestre', ['master', 'master']);

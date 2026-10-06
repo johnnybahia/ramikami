@@ -1,3 +1,4 @@
+import { BOT_LEVELS, type BotLevel } from '../shared/bot';
 import { MAX_PHOTO_CHARS, NAME_MAX } from '../shared/protocol';
 
 export interface Profile {
@@ -58,14 +59,15 @@ export function avatarColor(seed: string): string {
 const OFFLINE_KEY = 'ramikami_offline_v1';
 export interface OfflineSettings {
   bots: 1 | 2 | 3;
+  level: BotLevel;
   turnSeconds: 0 | 30 | 60;
 }
 export function loadOfflineSettings(): OfflineSettings {
   try {
     const s = JSON.parse(localStorage.getItem(OFFLINE_KEY) ?? '{}') as Partial<OfflineSettings>;
-    return { bots: s.bots === 2 || s.bots === 3 ? s.bots : 1, turnSeconds: s.turnSeconds === 30 || s.turnSeconds === 0 ? s.turnSeconds : 60 };
+    return { bots: s.bots === 2 || s.bots === 3 ? s.bots : 1, level: BOT_LEVELS.includes(s.level as BotLevel) ? (s.level as BotLevel) : 'normal', turnSeconds: s.turnSeconds === 30 || s.turnSeconds === 0 ? s.turnSeconds : 60 };
   } catch {
-    return { bots: 1, turnSeconds: 60 };
+    return { bots: 1, level: 'normal', turnSeconds: 60 };
   }
 }
 export function saveOfflineSettings(s: OfflineSettings): void {
@@ -76,9 +78,9 @@ export function saveOfflineSettings(s: OfflineSettings): void {
   }
 }
 
-const A11Y_KEY = 'ramikami_a11y_v1';
+const A11Y_KEY = 'ramikami_a11y_v2';
 export interface A11y {
-  /** alto contraste: cores bem distintas + símbolo por cor + 6 e 9 sublinhados */
+  /** alto contraste: cores mais fortes e traços mais grossos nas pedras */
   contrast: boolean;
   /** tamanho da interface: 0 normal, 1 grande, 2 extra grande */
   size: 0 | 1 | 2;
@@ -88,10 +90,10 @@ let a11y: A11y | null = null;
 
 export function loadA11y(): A11y {
   if (a11y) return a11y;
-  a11y = { contrast: true, size: 0 };
+  a11y = { contrast: false, size: 0 };
   try {
     const p = JSON.parse(localStorage.getItem(A11Y_KEY) ?? 'null') as Partial<A11y> | null;
-    if (p) a11y = { contrast: p.contrast !== false, size: p.size === 1 || p.size === 2 ? p.size : 0 };
+    if (p) a11y = { contrast: p.contrast === true, size: p.size === 1 || p.size === 2 ? p.size : 0 };
   } catch {
     /* sem armazenamento: usa o padrão */
   }

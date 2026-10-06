@@ -1,4 +1,4 @@
-import { botMove, botIdOf, thinkDelayMs, personaById, personaOfBotId, type Persona, type PersonaId } from '../../shared/bot';
+import { BOT_LEVELS, LEVEL_CFG, MAX_BOTS, botMove, pickBots, personaOfBotId, thinkDelayMs, type BotLevel, type LevelCfg } from '../../shared/bot';
 import { createGame, currentPlayer, drawTurn, playTurn, removePlayer, salvagePlay, MAX_TIMEOUTS, type GameState } from '../../shared/game';
 import type { SetState } from '../../shared/layout';
 import {
@@ -24,7 +24,9 @@ interface Stored {
   phase: 'lobby' | 'playing' | 'ended';
   lobby: { id: string; name: string }[];
   seats: Record<string, number>;
-  bots: Record<string, PersonaId>;
+  bots: Record<string, BotLevel>;
+  /** jogadores do saguão desconectados: id → quando saem da sala se não voltarem */
+  away: Record<string, number>;
   botAt: number | null;
   media: Record<string, { cam: boolean; mic: boolean }>;
   game: GameState | null;
@@ -33,6 +35,8 @@ interface Stored {
 }
 
 const IDLE_ROOM_MS = 10 * 60 * 1000;
+/** No saguão, quem perde a conexão (ex.: saiu para mandar o convite) tem este tempo para voltar. */
+const LOBBY_GRACE_MS = 5 * 60 * 1000;
 const OFFLINE_TURN_SECONDS = 8;
 const MAX_MSG = 100_000;
 
@@ -62,7 +66,10 @@ export class GameRoom implements DurableObject {
   ) {
     this.loaded = ctx.blockConcurrencyWhile(async () => {
       this.s = (await ctx.storage.get<Stored>('s')) ?? null;
-      if (this.s) this.s.bots ??= {};
+      if (this.s) {
+        this.s.bots ??= {};
+        this.s.away ??= {};
+      }
       this.photos = (await ctx.storage.get<Record<string, string>>('photos')) ?? {};
     });
   }
@@ -109,7 +116,7 @@ export class GameRoom implements DurableObject {
       melded: false,
       left: false,
       bot: !!s.bots[id],
-      persona: s.bots[id],
+      botLevel: s.bots[id],
       ...extra,
     });
     const players: RoomPlayer[] =
@@ -183,7 +190,7 @@ export class GameRoom implements DurableObject {
       if (this.s) return new Response('exists', { status: 409 });
       const body = (await req.json()) as { code: string; turnSeconds: number; isPublic: boolean };
       const turnSeconds = (TURN_SECONDS_OPTIONS as readonly number[]).includes(body.turnSeconds) ? (body.turnSeconds as TurnSeconds) : 60;
-      this.s = { code: body.code, hostId: '', turnSeconds, isPublic: !!body.isPublic, phase: 'lobby', lobby: [], seats: {}, bots: {}, botAt: null, media: {}, game: null, turnEndsAt: null, recorded: false };
+      this.s = { code: body.code, hostId: '', turnSeconds, isPublic: !!body.isPublic, phase: 'lobby', lobby: [], seats: {}, bots: {}, away: {}, botAt: null, media: {}, game: null, turnEndsAt: null, recorded: false };
       await this.persist();
       await this.ctx.storage.setAlarm(Date.now() + IDLE_ROOM_MS);
       return new Response('ok');
@@ -218,8 +225,10 @@ export class GameRoom implements DurableObject {
     switch (msg.t) {
       case 'start': {
         if (me !== s.hostId || s.phase !== 'lobby') return;
-        if (s.lobby.length < 2) return this.err(ws, 'São necessários pelo menos 2 jogadores.');
-        const order = [...s.lobby].sort((a, b) => (s.seats[a.id] ?? 0) - (s.seats[b.id] ?? 0));
+        const here = new Set(this.online().keys());
+        const ready = s.lobby.filter((p) => s.bots[p.id] || here.has(p.id));
+        if (ready.length < 2) return this.err(ws, 'São necessários pelo menos 2 jogadores conectados.');
+        const order = [...ready].sort((a, b) => (s.seats[a.id] ?? 0) - (s.seats[b.id] ?? 0));
         s.game = createGame(order.map((p) => ({ id: p.id, name: p.name, isBot: !!s.bots[p.id] })), Math.random);
         s.phase = 'playing';
         await this.afterGameChange(s.game);
@@ -233,25 +242,24 @@ export class GameRoom implements DurableObject {
         await this.listing();
         return;
       }
-      case 'addBot': {
+      case 'bots': {
         if (me !== s.hostId || s.phase !== 'lobby') return;
-        const persona = personaById(String(msg.persona));
-        if (!persona) return;
-        const id = botIdOf(persona.id);
-        if (s.bots[id]) return this.err(ws, `${persona.name} já está na sala.`);
-        if (s.lobby.length >= MAX_ROOM_PLAYERS) return this.err(ws, 'Sala cheia.');
-        s.lobby.push({ id, name: persona.name });
-        s.bots[id] = persona.id;
-        const used = new Set(Object.values(s.seats));
-        s.seats[id] = SEAT_PREFERENCE.find((x) => !used.has(x)) ?? 0;
+        if (!BOT_LEVELS.includes(msg.level)) return;
+        const humans = s.lobby.filter((p) => !s.bots[p.id]);
+        const want = Math.round(Number(msg.count)) || 0;
+        const count = Math.max(0, Math.min(MAX_BOTS, want, MAX_ROOM_PLAYERS - humans.length));
+        for (const p of s.lobby) if (s.bots[p.id]) delete s.seats[p.id];
+        s.bots = {};
+        s.lobby = humans;
+        for (const persona of pickBots(msg.level, count)) {
+          s.lobby.push({ id: persona.id, name: persona.name });
+          s.bots[persona.id] = persona.level;
+          const used = new Set(Object.values(s.seats));
+          s.seats[persona.id] = SEAT_PREFERENCE.find((x) => !used.has(x)) ?? 0;
+        }
         await this.persist();
         this.broadcast();
         await this.listing();
-        return;
-      }
-      case 'removeBot': {
-        if (me !== s.hostId || s.phase !== 'lobby' || !s.bots[msg.id]) return;
-        await this.dropPlayer(msg.id);
         return;
       }
       case 'seat': {
@@ -343,6 +351,14 @@ export class GameRoom implements DurableObject {
     if (s.phase === 'lobby') {
       if (!inLobby) {
         if (s.lobby.length >= MAX_ROOM_PLAYERS) {
+          const bot = [...s.lobby].reverse().find((p) => s.bots[p.id]);
+          if (bot) {
+            s.lobby = s.lobby.filter((p) => p.id !== bot.id);
+            delete s.bots[bot.id];
+            delete s.seats[bot.id];
+          }
+        }
+        if (s.lobby.length >= MAX_ROOM_PLAYERS) {
           this.err(ws, 'Sala cheia.');
           return void ws.close(4003, 'full');
         }
@@ -358,6 +374,7 @@ export class GameRoom implements DurableObject {
       return void ws.close(4003, 'started');
     }
 
+    delete s.away[id];
     const old = this.online().get(id);
     ws.serializeAttachment({ id });
     if (old && old !== ws) {
@@ -384,7 +401,11 @@ export class GameRoom implements DurableObject {
     if (!s) return;
     delete s.media[id];
     if (s.phase === 'lobby') {
-      await this.dropPlayer(id);
+      // não derruba a sala: o jogador pode ter só trocado de app para mandar o convite
+      s.away[id] = Date.now() + LOBBY_GRACE_MS;
+      await this.persist();
+      this.broadcast();
+      await this.scheduleLobbyAlarm();
       return;
     }
     const gp = s.game?.players.find((p) => p.id === id);
@@ -412,6 +433,7 @@ export class GameRoom implements DurableObject {
       s.lobby = s.lobby.filter((p) => p.id !== id);
       delete s.seats[id];
       delete s.bots[id];
+      delete s.away[id];
       delete this.photos[id];
       if (s.hostId === id) s.hostId = s.lobby.find((p) => !s.bots[p.id])?.id ?? '';
       if (!s.lobby.some((p) => !s.bots[p.id])) return this.destroy();
@@ -441,7 +463,7 @@ export class GameRoom implements DurableObject {
       const cur = currentPlayer(g);
       if (cur.isBot) {
         // o bot "pensa" uma parte do tempo do turno; o relógio mostrado é o do turno inteiro, como para humanos
-        s.botAt = Date.now() + thinkDelayMs(personaOfBotId(cur.id) ?? personaById('luna')!, s.turnSeconds);
+        s.botAt = Date.now() + thinkDelayMs(this.botCfg(cur.id), s.turnSeconds);
         s.turnEndsAt = Date.now() + s.turnSeconds * 1000;
         await this.ctx.storage.setAlarm(s.botAt);
         await this.listing();
@@ -478,7 +500,15 @@ export class GameRoom implements DurableObject {
     const s = this.s;
     if (!s) return;
     if (s.phase === 'lobby') {
-      if (s.lobby.length === 0) await this.destroy();
+      const now = Date.now();
+      const gone = Object.entries(s.away).filter(([, at]) => at <= now).map(([id]) => id);
+      for (const id of gone) {
+        delete s.away[id];
+        if (this.s) await this.dropPlayer(id);
+        if (!this.s) return;
+      }
+      if (s.lobby.length === 0) return this.destroy();
+      await this.scheduleLobbyAlarm();
       return;
     }
     if (s.phase !== 'playing' || !s.game) return;
@@ -510,11 +540,23 @@ export class GameRoom implements DurableObject {
     await this.afterGameChange(g);
   }
 
+  private botCfg(id: string): LevelCfg {
+    const lvl = this.s?.bots[id];
+    return LEVEL_CFG[lvl ?? personaOfBotId(id)?.level ?? 'normal'];
+  }
+
+  private async scheduleLobbyAlarm(): Promise<void> {
+    const s = this.s;
+    if (!s) return;
+    const next = Math.min(Date.now() + IDLE_ROOM_MS, ...Object.values(s.away));
+    await this.ctx.storage.setAlarm(next);
+  }
+
   private async botTurn(): Promise<void> {
     const s = this.s!;
     const g = s.game!;
     const cur = currentPlayer(g);
-    const persona: Persona = personaOfBotId(cur.id) ?? personaById('luna')!;
+    const persona = this.botCfg(cur.id);
     const table = botMove(g, persona);
     let step = table ? playTurn(g, cur.id, table) : null;
     const played = !!step && step.ok;

@@ -131,6 +131,40 @@ export function tidyTable(d: Draft): Draft | null {
   return n;
 }
 
+/** Conjuntos da mesa onde a pedra `id` entra formando um conjunto válido, com a melhor posição em cada um. */
+export function acceptingSets(table: readonly SetState[], id: number): { setId: number; index: number }[] {
+  const out: { setId: number; index: number }[] = [];
+  for (const s of tableWithoutTile(table, id)) {
+    if (s.tiles.length > 12) continue;
+    for (let i = 0; i <= s.tiles.length; i++) {
+      const cand = [...s.tiles.slice(0, i), id, ...s.tiles.slice(i)];
+      if (analyzeSet(cand).valid) {
+        out.push({ setId: s.id, index: i });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Pedra solta na mesa fora de qualquer conjunto: procura um conjunto vizinho onde ela encaixe de forma válida
+ * (até ~6 casas de distância, no máximo 2 linhas) para não ficar solta.
+ */
+export function suggestDrop(table: readonly SetState[], id: number, cx: number, cz: number): DropAction | null {
+  const base = tableWithoutTile(table, id);
+  let best: { act: DropAction; d: number } | null = null;
+  for (const a of acceptingSets(table, id)) {
+    const s = base.find((x) => x.id === a.setId)!;
+    const dx = Math.max(0, s.x - cx, cx - (s.x + s.tiles.length));
+    const dz = Math.abs(s.z + 0.5 - cz);
+    if (dx > 6 || dz > 2) continue;
+    const d = dx + dz * 2;
+    if (!best || d < best.d) best = { act: { kind: 'insert', setId: a.setId, index: a.index }, d };
+  }
+  return best ? best.act : null;
+}
+
 export function splitSet(d: Draft, setId: number, index: number): Draft | null {
   const s = d.table.find((x) => x.id === setId);
   if (!s || index <= 0 || index >= s.tiles.length) return null;

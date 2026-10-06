@@ -2,7 +2,7 @@ import type { Backend, BackendEvents } from '../backend';
 import { noopEvents } from '../backend';
 import { wsUrl } from '../api';
 import type { SetState } from '../../shared/layout';
-import type { PersonaId, ClientMsg, ServerMsg, TurnSeconds } from '../../shared/protocol';
+import type { BotLevel, ClientMsg, ServerMsg, TurnSeconds } from '../../shared/protocol';
 import type { Profile } from '../store';
 
 export class OnlineBackend implements Backend {
@@ -17,7 +17,17 @@ export class OnlineBackend implements Backend {
   constructor(
     private code: string,
     private profile: Profile,
-  ) {}
+  ) {
+    // voltou para o jogo (ex.: depois de mandar o convite): reconecta já, sem esperar o próximo ciclo
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || this.closedByUs) return;
+      if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
+        window.clearTimeout(this.reconnectTimer);
+        this.retry = 0;
+        this.connect();
+      }
+    });
+  }
 
   connect(): void {
     this.closedByUs = false;
@@ -101,11 +111,8 @@ export class OnlineBackend implements Backend {
   settings(turnSeconds: TurnSeconds): void {
     this.send({ t: 'settings', turnSeconds });
   }
-  addBot(persona: PersonaId): void {
-    this.send({ t: 'addBot', persona });
-  }
-  removeBot(id: string): void {
-    this.send({ t: 'removeBot', id });
+  setBots(count: number, level: BotLevel): void {
+    this.send({ t: 'bots', count, level });
   }
   kick(id: string): void {
     this.send({ t: 'kick', id });

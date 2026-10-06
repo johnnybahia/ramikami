@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { COLS, ROWS, type SetState } from '../../shared/layout';
 import { TILE_COUNT } from '../../shared/tiles';
 import { setHighContrast } from './tiles3d';
-import { resolveBoardDrop, tableWithoutTile } from './draft';
+import { acceptingSets, resolveBoardDrop, suggestDrop, tableWithoutTile } from './draft';
 import { CELL_D, CELL_W, TILE_D, TILE_H, TILE_W, Tile, feltTexture, woodTexture } from './tiles3d';
 
 export const BOARD_W = COLS * CELL_W;
@@ -72,6 +72,9 @@ export class TableScene {
   private lastTap: { setId: number; t: number } | null = null;
   private aniso = 4;
   private sizeF = 1;
+  /** conjuntos onde a pedra arrastada encaixa (brilham em verde) */
+  private hintSets = new Set<number>();
+  private hintFor = -1;
   private rafId = 0;
   private lastT = 0;
   private dirty = true;
@@ -402,6 +405,10 @@ export class TableScene {
           k = 0.2;
         }
       }
+      if (region === 'board' && w && this.hintSets.has(w.set.id)) {
+        tint = 0x3dff7a;
+        k = 0.42;
+      }
       if (region === 'rack' && s.selected.has(t.id)) {
         tint = 0xffd23a;
         k = 0.55;
@@ -598,6 +605,7 @@ export class TableScene {
     if (this.it && this.it.type === 'tile' && this.it.active) this.tiles[this.it.id]!.dragging = false;
     this.it = null;
     this.hideHints();
+    this.clearHintSets();
     this.syncTiles();
   }
 
@@ -677,6 +685,7 @@ export class TableScene {
     t.group.rotation.y = 0;
     this.hideHints();
     if (region === 'rack') {
+      this.clearHintSets();
       const n = this.state.rack.length - (this.state.rack.includes(id) ? 1 : 0);
       const idx = this.rackIndexAt(g.x, g.z, n);
       const pos = this.rackPos(idx);
@@ -685,7 +694,13 @@ export class TableScene {
     } else if (this.state.canEditBoard) {
       const cx = g.x / CELL_W + COLS / 2;
       const cz = g.z / CELL_D + ROWS / 2;
-      const act = resolveBoardDrop(tableWithoutTile(this.state.table, id), cx, cz);
+      if (this.hintFor !== id) {
+        this.hintFor = id;
+        this.hintSets = new Set(acceptingSets(this.state.table, id).map((a) => a.setId));
+        this.syncTiles();
+      }
+      let act = resolveBoardDrop(tableWithoutTile(this.state.table, id), cx, cz);
+      if (act.kind === 'new') act = suggestDrop(this.state.table, id, cx, cz) ?? act;
       if (act.kind === 'insert') {
         const set = tableWithoutTile(this.state.table, id).find((s) => s.id === act.setId)!;
         const edge = this.boardPos(set.x, act.index, set.z);
@@ -698,6 +713,13 @@ export class TableScene {
       }
     }
     this.dirty = true;
+  }
+
+  private clearHintSets(): void {
+    if (this.hintSets.size === 0 && this.hintFor < 0) return;
+    this.hintSets = new Set();
+    this.hintFor = -1;
+    this.syncTiles();
   }
 
   private hideHints(): void {
@@ -716,6 +738,7 @@ export class TableScene {
     }
     this.it = null;
     this.hideHints();
+    this.clearHintSets();
     if (!it) return;
     if (it.type === 'hold') {
       window.clearTimeout(it.timer);

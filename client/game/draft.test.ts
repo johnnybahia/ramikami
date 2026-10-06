@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dropNew, dropOnSet, dropToRack, draftStatus, newDraft, resolveBoardDrop, splitSet, tidyTable } from './draft';
+import { dropNew, dropOnSet, dropToRack, draftStatus, newDraft, resolveBoardDrop, splitSet, tidyTable, acceptingSets, suggestDrop } from './draft';
 
 const T = (color: number, num: number) => color * 13 + (num - 1);
 
@@ -45,5 +45,19 @@ describe('tidyTable', () => {
     expect(t.table.map((s) => s.tiles).sort()).toEqual([[0, 1, 2], [13, 14, 15, 16]].sort());
     expect(t.table.every((s) => s.z === 0)).toBe(true);
     expect(t.table.map((s) => s.x).sort((a, b) => a - b)).toEqual([0, 5]);
+  });
+});
+
+describe('ajuda de encaixe', () => {
+  const T = (c: number, n: number) => c * 13 + n - 1;
+  const table = [{ id: 1, tiles: [T(0, 4), T(0, 5), T(0, 6)], x: 5, z: 3 }];
+  it('acha o conjunto onde a pedra encaixa', () => {
+    expect(acceptingSets(table, T(0, 7))).toEqual([{ setId: 1, index: 3 }]);
+    expect(acceptingSets(table, T(1, 9))).toEqual([]);
+  });
+  it('pedra solta perto de um conjunto compatível encaixa nele; longe ou incompatível fica solta', () => {
+    expect(suggestDrop(table, T(0, 7), 12, 3.5)).toEqual({ kind: 'insert', setId: 1, index: 3 });
+    expect(suggestDrop(table, T(0, 7), 30, 3.5)).toBeNull();
+    expect(suggestDrop(table, T(1, 9), 8, 3.5)).toBeNull();
   });
 });

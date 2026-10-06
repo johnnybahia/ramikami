@@ -1,6 +1,7 @@
 import { createRoom, getRanking, listRooms } from '../api';
 import { getPwa, installApp, applyUpdate, isIos, onPwa } from '../pwa';
 import { avatarColor, loadA11y, saveA11y, type A11y, loadOfflineSettings, newId, photoFromFile, saveOfflineSettings, saveProfile, type OfflineSettings, type Profile } from '../store';
+import { BOT_LEVELS, LEVEL_CFG } from '../../shared/bot';
 import { NAME_MAX, TURN_SECONDS_OPTIONS, type TurnSeconds } from '../../shared/protocol';
 import { avatarEl, btn, clear, h, toast } from './dom';
 
@@ -140,6 +141,8 @@ function offlinePanel(a: MenuActions): void {
       h('p', { class: 'muted', text: 'Funciona sem internet depois que o jogo for baixado.' }),
       h('label', { class: 'lbl', text: 'Adversários (bots)' }),
       segmented([{ value: 1, label: '1' }, { value: 2, label: '2' }, { value: 3, label: '3' }] as const, cfg.bots, (v) => (cfg.bots = v)),
+      h('label', { class: 'lbl', text: 'Nível dos bots' }),
+      segmented(BOT_LEVELS.map((l) => ({ value: l, label: LEVEL_CFG[l].label })), cfg.level, (v) => (cfg.level = v)),
       h('label', { class: 'lbl', text: 'Tempo por jogada' }),
       segmented([{ value: 30, label: '30s' }, { value: 60, label: '60s' }, { value: 0, label: 'Sem limite' }] as const, cfg.turnSeconds, (v) => (cfg.turnSeconds = v)),
       h('div', { class: 'row' }, btn('Começar', () => { saveOfflineSettings(cfg); m.close(); a.startOffline(cfg); }, 'primary'), btn('Cancelar', () => m.close(), 'ghost')),
