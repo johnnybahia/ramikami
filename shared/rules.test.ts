@@ -287,3 +287,13 @@ describe('grade: packRows e relayout', () => {
     for (const a of out) for (const b of out) if (a !== b && a.z === b.z) expect(a.x + a.tiles.length + 1 <= b.x || b.x + b.tiles.length + 1 <= a.x).toBe(true);
   });
 });
+
+import { CHATTER, pickChatter } from './chatter';
+describe('chatter', () => {
+  it('tem ~50 frases e sorteia de cada tipo', () => {
+    const all = Object.values(CHATTER).flat();
+    expect(all.length).toBeGreaterThanOrEqual(50);
+    expect(new Set(all).size).toBe(all.length);
+    for (const k of Object.keys(CHATTER) as (keyof typeof CHATTER)[]) expect(CHATTER[k]).toContain(pickChatter(k));
+  });
+});
