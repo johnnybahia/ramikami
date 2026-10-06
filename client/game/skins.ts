@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type SkinId = 'verde' | 'bahia' | 'vitoria' | 'corinthians' | 'natal' | 'anonovo';
+export type SkinId = 'verde' | 'bahia' | 'vitoria' | 'corinthians' | 'palmeiras' | 'natal' | 'anonovo';
 
 export interface Skin {
   id: SkinId;
@@ -16,13 +16,14 @@ export const SKINS: readonly Skin[] = [
   { id: 'bahia', name: 'Bahia', swatch: ['#0f2c66', '#c8102e'], bg: '#08142e' },
   { id: 'vitoria', name: 'Vitória', swatch: ['#1c0e10', '#c4161c'], bg: '#0d0607' },
   { id: 'corinthians', name: 'Corinthians', swatch: ['#161616', '#f2f2f2'], bg: '#070707' },
+  { id: 'palmeiras', name: 'Palmeiras', swatch: ['#0b4a2a', '#f2f2f2'], bg: '#04170d' },
   { id: 'natal', name: 'Natal', swatch: ['#14452e', '#b3202a'], bg: '#0a1f15' },
   { id: 'anonovo', name: 'Ano Novo', swatch: ['#0e1a3a', '#d9b45a'], bg: '#060b1c' },
 ];
 
 export const SKIN_IDS: readonly SkinId[] = SKINS.map((s) => s.id);
 /** mesas de time: o escudo é uma imagem que o próprio jogador escolhe (ou um arquivo public/skins/<id>.png) */
-export const LOGO_SKINS: readonly SkinId[] = ['bahia', 'vitoria', 'corinthians'];
+export const LOGO_SKINS: readonly SkinId[] = ['bahia', 'vitoria', 'corinthians', 'palmeiras'];
 export const skinById = (id: SkinId): Skin => SKINS.find((s) => s.id === id) ?? SKINS[0]!;
 
 const W = 1600;
@@ -61,6 +62,14 @@ const LOOKS: Record<Exclude<SkinId, 'verde'>, Look> = {
   },
   corinthians: {
     base: '#161616',
+    lines: [
+      { color: '#f2f2f2', width: 6, inset: 26 },
+      { color: '#f2f2f2', width: 2, inset: 42 },
+    ],
+    glow: 'rgba(255,255,255,0.09)',
+  },
+  palmeiras: {
+    base: '#0b4a2a',
     lines: [
       { color: '#f2f2f2', width: 6, inset: 26 },
       { color: '#f2f2f2', width: 2, inset: 42 },
