@@ -1,3 +1,4 @@
+import { ANIM_MOVE_MS, ANIM_NEW_MS } from '../../shared/protocol';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { COLS, ROWS, type SetState } from '../../shared/layout';
@@ -32,6 +33,8 @@ export interface SceneHandlers {
   onBoardDrop(id: number, cx: number, cz: number): void;
   onSetMove(setId: number, dx: number, dz: number): void;
   onPickBoard(id: number, whole: boolean): void;
+  /** a altura do cavalete mudou (recolheu/abriu): a barra de ações precisa subir/descer */
+  onRackResize?(): void;
   onPoolTap(): void;
 }
 
@@ -97,6 +100,9 @@ export class TableScene {
   private fitted = false;
   /** enquadra a mesa sozinha (o mínimo de zoom manual); some quando o jogador mexe na câmera */
   private autoFit = true;
+  private bigTiles = false;
+  private rackAuto = false;
+  private rackPeek = false;
   private camGoal: { tx: number; tz: number; dist: number } | null = null;
   private boundsKey = '';
 
@@ -364,6 +370,7 @@ export class TableScene {
 
   // ---------- estado ----------
   setState(s: SceneState): void {
+    if (s.canEditBoard !== this.state.canEditBoard) this.rackPeek = false;
     this.state = s;
     this.poolGroup.visible = s.poolCount > 0;
     this.layoutRack(s.rack.length);
@@ -373,6 +380,25 @@ export class TableScene {
     if (!this.fitted && s.table.length > 0) this.fitNow();
     else if (s.table.length > 0 && !this.it) this.followTable();
     this.dirty = true;
+  }
+
+  /** Pedras grandes: quando ligado, a câmera não afasta além de ~18 colunas na tela (rola em vez de encolher). */
+  setBigTiles(on: boolean): void {
+    this.bigTiles = on;
+    this.fit();
+  }
+
+  /** Cavalete recolhido numa faixa fina fora da minha vez (toque para abrir). */
+  setRackAuto(on: boolean): void {
+    this.rackAuto = on;
+    this.rackPeek = false;
+    this.layoutRack(this.state.rack.length);
+    this.syncTiles();
+    this.dirty = true;
+  }
+
+  private rackCollapsed(): boolean {
+    return this.rackAuto && !this.state.canEditBoard && !this.rackPeek;
   }
 
   private layoutRack(n: number): void {
@@ -389,10 +415,11 @@ export class TableScene {
     const { rows, h } = need(cols);
     this.cols = cols;
     this.rows = rows;
-    const nextH = Math.max(H * 0.17, Math.min(H * (this.sizeF > 1 ? 0.52 : 0.42), h));
+    const nextH = this.rackCollapsed() ? 38 : Math.max(H * 0.17, Math.min(H * (this.sizeF > 1 ? 0.52 : 0.42), h));
     if (Math.abs(nextH - this.rackH) > 0.5) {
       this.rackH = nextH;
       this.updateCams();
+      this.handlers.onRackResize?.();
     }
     const cw = cols * CELL_W + 0.9;
     const ch = rows * CELL_D + 0.9;
@@ -413,11 +440,29 @@ export class TableScene {
     for (const set of s.table) set.tiles.forEach((id, index) => where.set(id, { set, index }));
     const rackIdx = new Map<number, number>();
     s.rack.forEach((id, i) => rackIdx.set(id, i));
-    // jogada de outro jogador: as pedras novas entram uma por uma (devagar), vindas de cima
+    // jogada de outro jogador: as pedras novas entram uma por uma (devagar), vindas de cima, e as que só mudam de lugar
+    // deslizam também uma por uma, na ordem da mesa
     const slow = this.slowNext;
-    const order = new Map<number, number>();
-    if (slow) for (const set of s.table) for (const id of set.tiles) if (!this.tiles[id]!.present) order.set(id, order.size);
-    const gap = Math.min(0.7, 6 / Math.max(1, order.size));
+    const seq = new Map<number, { delay: number; fresh: boolean }>();
+    if (slow) {
+      let at = 0.3;
+      const sets = s.table.slice().sort((a, b) => a.z - b.z || a.x - b.x);
+      const probe = new THREE.Vector3();
+      for (const set of sets)
+        set.tiles.forEach((id, index) => {
+          const t = this.tiles[id]!;
+          if (!t.present) {
+            seq.set(id, { delay: at, fresh: true });
+            at += ANIM_NEW_MS / 1000;
+          } else {
+            probe.copy(this.boardPos(set.x, index, set.z, 0));
+            if (this.tileScene[id] === 'board' && t.target.distanceToSquared(probe) > 0.01) {
+              seq.set(id, { delay: at, fresh: false });
+              at += ANIM_MOVE_MS / 1000;
+            }
+          }
+        });
+    }
     const dragId = this.it && this.it.type === 'tile' && this.it.active ? this.it.id : -1;
     const setDrag = this.it && this.it.type === 'set' && this.it.active ? this.it : null;
 
@@ -454,8 +499,8 @@ export class TableScene {
         if (!t.present && region === 'board') t.group.position.y += 5;
         if (slow && !t.present && region === 'board') {
           t.group.visible = false;
-          t.delay = (order.get(t.id) ?? 0) * gap + 0.3;
-          t.speed = 4;
+          t.delay = seq.get(t.id)?.delay ?? 0.3;
+          t.speed = 2.6;
           t.group.position.set(t.target.x, 6, -BOARD_D / 2 - 7);
         }
         if (region === 'rack') t.group.scale.setScalar(0.35);
@@ -465,7 +510,10 @@ export class TableScene {
       }
       t.dragging = false;
       // pedras que já estavam na mesa e mudaram de lugar (rearranjo, empurrão) deslizam devagar
-      if (slow && region === 'board' && prev === 'board' && oldTarget.distanceToSquared(t.target) > 0.01) t.speed = 3.2;
+      if (slow && region === 'board' && prev === 'board' && oldTarget.distanceToSquared(t.target) > 0.01) {
+        t.delay = seq.get(t.id)?.delay ?? 0;
+        t.speed = 2.2;
+      }
       // cores de estado do conjunto
       let tint = 0;
       let k = 0;
@@ -570,10 +618,12 @@ export class TableScene {
     const h = Math.max(maxZ - minZ, 5) + 1.5;
     const aspect = this.W / Math.max(1, this.H - this.rackH);
     const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+    let dist = Math.max(8, Math.min(75, Math.max(w / 2 / (t * aspect), h / 2 / (t * Math.sin(ELEV)))));
+    if (this.bigTiles) dist = Math.min(dist, Math.max(8, (18 * CELL_W + 3) / 2 / (t * aspect)));
     const goal = {
       tx: Math.max(-BOARD_W / 2, Math.min(BOARD_W / 2, (minX + maxX) / 2)),
       tz: Math.max(-BOARD_D / 2 - 3, Math.min(BOARD_D / 2, (minZ + maxZ) / 2)),
-      dist: Math.max(8, Math.min(75, Math.max(w / 2 / (t * aspect), h / 2 / (t * Math.sin(ELEV))))),
+      dist,
     };
     return { ...goal, key: [minX, maxX, minZ, maxZ].map((v) => Math.round(v * 2)).join(',') };
   }
@@ -603,8 +653,8 @@ export class TableScene {
     this.boundsKey = g.key;
     // na minha vez a câmera não mexe enquanto monto (senão o enquadramento muda debaixo do dedo): só se algo sair da tela
     if (this.state.canEditBoard) {
-      if (this.allVisible()) return;
-    } else if (!this.autoFit && this.allVisible()) {
+      if (this.bigTiles || this.allVisible()) return;
+    } else if (!this.autoFit && (this.bigTiles || this.allVisible())) {
       // se o jogador mexeu na câmera, só reenquadra quando algo passa a ficar fora da tela
       return;
     }
@@ -689,6 +739,13 @@ export class TableScene {
     }
     if (this.pointers.size > 1) return;
     const region = this.regionAt(p.y);
+    if (region === 'rack' && this.rackCollapsed()) {
+      this.rackPeek = true;
+      this.layoutRack(this.state.rack.length);
+      this.syncTiles();
+      this.dirty = true;
+      return;
+    }
     const id = this.pickTile(region, p.x, p.y, e.pointerType !== 'mouse');
     if (id !== null) {
       if (region === 'rack') {

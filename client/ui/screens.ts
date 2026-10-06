@@ -317,6 +317,18 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
     saveA11y({ ...loadA11y(), contrast: cb.checked });
     onChange?.(loadA11y());
   });
+  const bigCb = h('input', { attrs: { type: 'checkbox' } });
+  bigCb.checked = cur.bigTiles;
+  bigCb.addEventListener('change', () => {
+    saveA11y({ ...loadA11y(), bigTiles: bigCb.checked });
+    onChange?.(loadA11y());
+  });
+  const rackCb = h('input', { attrs: { type: 'checkbox' } });
+  rackCb.checked = cur.rackAuto;
+  rackCb.addEventListener('change', () => {
+    saveA11y({ ...loadA11y(), rackAuto: rackCb.checked });
+    onChange?.(loadA11y());
+  });
   const skinPicker = h('div', { class: 'skins' });
   const logoRow = h('div', { class: 'logorow' });
   const drawLogoRow = (): void => {
@@ -374,6 +386,8 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
       { class: 'panel' },
       h('h2', { text: 'Visual' }),
       h('label', { class: 'check' }, cb, h('span', { text: 'Alto contraste: pedras brancas, cores bem distintas e um símbolo para cada cor (● ▲ ■ ◆)' })),
+      h('label', { class: 'check' }, bigCb, h('span', { text: 'Pedras grandes na mesa: não afasta tudo para caber; você rola a mesa com o dedo' })),
+      h('label', { class: 'check' }, rackCb, h('span', { text: 'Recolher o cavalete quando não é a minha vez (toque na faixa para abrir)' })),
       h('label', { class: 'lbl', text: 'Tamanho das letras e botões' }),
       segmented([{ value: 0, label: 'Normal' }, { value: 1, label: 'Grande' }, { value: 2, label: 'Extra' }] as const, cur.size, (v) => {
         saveA11y({ ...loadA11y(), size: v });

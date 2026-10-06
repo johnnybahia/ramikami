@@ -1,6 +1,7 @@
 // Posição dos sets na mesa: grade de células, uma pedra por célula, com 1 célula de folga entre sets na mesma linha.
-export const COLS = 34;
-export const ROWS = 12;
+// grade mais alta que larga: no celular em pé a largura é o que limita o tamanho das pedras
+export const COLS = 26;
+export const ROWS = 16;
 
 export interface SetState {
   id: number;
@@ -157,4 +158,19 @@ export function relayout(input: readonly SetState[]): SetState[] {
     placed.push(set);
   }
   return placed;
+}
+
+/** Quantas pedras são novas na mesa e quantas já estavam mas mudaram de lugar (para dimensionar a animação). */
+export function animCounts(prev: readonly SetState[], next: readonly SetState[]): { fresh: number; moved: number } {
+  const was = new Map<number, string>();
+  for (const s of prev) s.tiles.forEach((t, i) => was.set(t, `${s.x + i},${s.z}`));
+  let fresh = 0;
+  let moved = 0;
+  for (const s of next)
+    s.tiles.forEach((t, i) => {
+      const old = was.get(t);
+      if (old === undefined) fresh++;
+      else if (old !== `${s.x + i},${s.z}`) moved++;
+    });
+  return { fresh, moved };
 }

@@ -89,16 +89,20 @@ export interface A11y {
   skin: SkinId;
   /** falas dos bots no balão sob a barra de jogadores */
   chat: boolean;
+  /** pedras grandes: a câmera não afasta além de um tamanho confortável (rola a mesa em vez de encolher tudo) */
+  bigTiles: boolean;
+  /** recolhe o cavalete numa faixa fina quando não é a sua vez (toque para abrir) */
+  rackAuto: boolean;
 }
 const SIZE_PCT = [100, 118, 136] as const;
 let a11y: A11y | null = null;
 
 export function loadA11y(): A11y {
   if (a11y) return a11y;
-  a11y = { contrast: false, size: 0, skin: 'verde', chat: true };
+  a11y = { contrast: false, size: 0, skin: 'verde', chat: true, bigTiles: false, rackAuto: false };
   try {
     const p = JSON.parse(localStorage.getItem(A11Y_KEY) ?? 'null') as Partial<A11y> | null;
-    if (p) a11y = { contrast: p.contrast === true, size: p.size === 1 || p.size === 2 ? p.size : 0, skin: SKIN_IDS.includes(p.skin as SkinId) ? (p.skin as SkinId) : 'verde', chat: p.chat !== false };
+    if (p) a11y = { contrast: p.contrast === true, size: p.size === 1 || p.size === 2 ? p.size : 0, skin: SKIN_IDS.includes(p.skin as SkinId) ? (p.skin as SkinId) : 'verde', chat: p.chat !== false, bigTiles: p.bigTiles === true, rackAuto: p.rackAuto === true };
   } catch {
     /* sem armazenamento: usa o padrão */
   }

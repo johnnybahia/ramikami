@@ -26,6 +26,7 @@ import { BOT_LEVELS, LEVEL_CFG, MAX_BOTS, personaOfBotId, type BotLevel } from '
 import { personaAvatar } from '../botAvatars';
 import { a11yPanel, modal } from './screens';
 import { relayout, type SetState } from '../../shared/layout';
+import { animCounts } from '../../shared/layout';
 import { BEST_OF_OPTIONS, BOT_TURN_SECONDS, animMsFor, TURN_SECONDS_OPTIONS, turnLabel, type BestOf, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
 import { applyUpdate, checkForUpdate, onPwa, type PwaState } from '../pwa';
 import { avatarColor, loadA11y, saveA11y, type Profile } from '../store';
@@ -121,6 +122,7 @@ export class GameScreen {
       onBoardDrop: (id, cx, cz) => this.onBoardDrop(id, cx, cz),
       onSetMove: (sid, dx, dz) => this.onSetMove(sid, dx, dz),
       onPickBoard: (id, whole) => this.onPickBoard(id, whole),
+      onRackResize: () => this.layoutBars(),
       onPoolTap: () => this.requestDraw(),
       onPick: (id) => this.onPick(id),
     });
@@ -162,6 +164,8 @@ export class GameScreen {
     if (this.o.profile.photo) this.photos.set(this.o.profile.id, this.o.profile.photo);
     this.scene.setSize(loadA11y().size);
     this.scene.setSkin(loadA11y().skin);
+    this.scene.setBigTiles(loadA11y().bigTiles);
+    this.scene.setRackAuto(loadA11y().rackAuto);
     this.tick = window.setInterval(() => this.tickUi(), 250);
     this.b.connect();
   }
@@ -263,11 +267,11 @@ export class GameScreen {
     this.receivedAt = performance.now();
     if (prev && prev.phase === 'playing' && prev.turnId && prev.turnId !== v.you && v.turnNo > prev.turnNo && JSON.stringify(v.table) !== JSON.stringify(prev.table)) {
       this.slowFlag = true;
-      const had = new Set(prev.table.flatMap((x) => x.tiles));
-      const fresh = v.table.reduce((n, x) => n + x.tiles.filter((t) => !had.has(t)).length, 0);
-      this.busyUntil = performance.now() + animMsFor(fresh);
+      const ac = animCounts(prev.table, v.table);
+      const ms = animMsFor(ac.fresh, ac.moved);
+      this.busyUntil = performance.now() + ms;
       window.clearTimeout(this.busyTimer);
-      this.busyTimer = window.setTimeout(() => this.afterBusy(), animMsFor(fresh) + 60);
+      this.busyTimer = window.setTimeout(() => this.afterBusy(), ms + 60);
     }
     if (prev && prev.phase === 'playing' && (v.turnNo > prev.turnNo || v.phase === 'ended')) this.botChatter(prev, v);
     const sig = `${v.phase}|${v.turnNo}|${JSON.stringify(v.table)}|${v.rack.slice().sort((a, b) => a - b).join(',')}`;
@@ -528,6 +532,7 @@ export class GameScreen {
   }
 
   private layoutBars(): void {
+    if (!this.scene) return;
     const rh = this.scene.rackHeight;
     this.actionbar.style.bottom = `${rh}px`;
     this.root.style.setProperty('--rack-h', `${rh}px`);
@@ -561,7 +566,7 @@ export class GameScreen {
         ...(online ? [item('🔗', 'Convidar', () => void this.shareRoom())] : []),
         ...(online ? [item(me?.cam ? '📷' : '🚫', me?.cam ? 'Câmera ligada' : 'Ligar câmera', () => void this.toggleMedia('cam'))] : []),
         ...(online ? [item(me?.mic ? '🎤' : '🔇', me?.mic ? 'Microfone ligado' : 'Ligar microfone', () => void this.toggleMedia('mic'))] : []),
-        item('Aa', 'Visual e mesa', () => a11yPanel((a) => { this.scene.setContrast(a.contrast); this.scene.setSize(a.size); this.scene.setSkin(a.skin); })),
+        item('Aa', 'Visual e mesa', () => a11yPanel((a) => { this.scene.setContrast(a.contrast); this.scene.setSize(a.size); this.scene.setSkin(a.skin); this.scene.setBigTiles(a.bigTiles); this.scene.setRackAuto(a.rackAuto); })),
         item(loadA11y().chat ? '💬' : '🔕', loadA11y().chat ? 'Falas dos bots: ligadas' : 'Falas dos bots: desligadas', () => {
           const on = !loadA11y().chat;
           saveA11y({ ...loadA11y(), chat: on });

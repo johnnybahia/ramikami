@@ -1,6 +1,6 @@
 import { BOT_LEVELS, LEVEL_CFG, MAX_BOTS, botMove, pickBots, personaOfBotId, thinkDelayMs, type BotLevel, type LevelCfg } from '../../shared/bot';
 import { createGame, currentPlayer, drawTurn, playTurn, removePlayer, salvagePlay, MAX_TIMEOUTS, type GameState } from '../../shared/game';
-import type { SetState } from '../../shared/layout';
+import { animCounts, type SetState } from '../../shared/layout';
 import {
   MAX_PHOTO_CHARS,
   BEST_OF_OPTIONS,
@@ -400,9 +400,8 @@ export class GameRoom implements DurableObject {
         if (!table) return this.err(ws, 'Mesa inválida.');
         const step = playTurn(s.game, me, table);
         if (!step.ok) return this.err(ws, step.reason);
-        const rackBefore = s.game.players.find((p) => p.id === me)?.rack.length ?? 0;
-        const rackAfter = step.state.players.find((p) => p.id === me)?.rack.length ?? rackBefore;
-        await this.afterGameChange(step.state, animMsFor(rackBefore - rackAfter));
+        const ac = animCounts(s.game.table, step.state.table);
+        await this.afterGameChange(step.state, animMsFor(ac.fresh, ac.moved));
         return;
       }
       case 'draw': {
@@ -775,8 +774,7 @@ export class GameRoom implements DurableObject {
       const text = pool[Math.floor(Math.random() * pool.length)]!;
       for (const ws of this.online().values()) this.send(ws, { t: 'say', id: cur.id, text });
     }
-    const before = cur.rack.length;
-    const after = step.state.players.find((p) => p.id === cur.id)?.rack.length ?? before;
-    await this.afterGameChange(step.state, animMsFor(before - after));
+    const ac = animCounts(g.table, step.state.table);
+    await this.afterGameChange(step.state, animMsFor(ac.fresh, ac.moved));
   }
 }
