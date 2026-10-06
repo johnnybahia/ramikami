@@ -5,14 +5,13 @@ import type { GameState } from './game';
 import { key, packCounts, type Cand } from './pack';
 import { solveTable } from './solver';
 
-export type PersonaId = 'davi' | 'jorge' | 'luna' | 'marina' | 'mestre';
+export type BotLevel = 'easy' | 'normal' | 'hard' | 'master';
+export const BOT_LEVELS: readonly BotLevel[] = ['easy', 'normal', 'hard', 'master'];
+export const MAX_BOTS = 3;
 
-export interface Persona {
-  id: PersonaId;
-  name: string;
-  gender: 'm' | 'f';
-  level: 'Fácil' | 'Médio' | 'Difícil' | 'Mestre';
-  /** como joga, em uma frase (mostrado ao anfitrião) */
+export interface LevelCfg {
+  label: string;
+  /** como jogam, em uma frase */
   blurb: string;
   /** nós de busca para montar conjuntos só com o cavalete */
   budget: number;
@@ -26,115 +25,131 @@ export interface Persona {
   rearrange: number;
   /** chance de tentar rearranjar a mesa em cada turno */
   rearrangeChance: number;
-  /** joga só um conjunto por turno (depois de abrir) */
-  oneSet: boolean;
   /** guarda coringas no cavalete até o fim da partida */
   holdJokers: boolean;
-  /** fração do tempo do turno que ele leva "pensando" (min, max): nunca joga de imediato */
+  /** fração do tempo do turno que levam "pensando" (min, max): nunca jogam de imediato */
   think: [number, number];
   lines: { play: string[]; draw: string[] };
 }
 
-export const PERSONAS: readonly Persona[] = [
-  {
-    id: 'davi',
-    name: 'Davi',
-    gender: 'm',
-    level: 'Fácil',
-    blurb: 'Apressado: joga rápido, às vezes compra sem pensar e nunca mexe na mesa.',
+export const LEVEL_CFG: Record<BotLevel, LevelCfg> = {
+  easy: {
+    label: 'Fácil',
+    blurb: 'Joga rápido, às vezes compra sem pensar e nunca mexe na mesa.',
     budget: 2500,
     extend: false,
     jokers: false,
     skip: 0.2,
     rearrange: 0,
     rearrangeChance: 0,
-    oneSet: false,
     holdJokers: false,
-    think: [0.1, 0.22],
-    lines: { play: ['Bora, bora!', 'Rapidinho!', 'Já foi!'], draw: ['Ah, vou comprar...', 'Sem pressa... ou com.', 'Compra logo!'] },
+    think: [0.12, 0.25],
+    lines: { play: ['Bora!', 'Rapidinho!', 'Já foi!'], draw: ['Ah, vou comprar...', 'Sem jogada.', 'Compra logo!'] },
   },
-  {
-    id: 'jorge',
-    name: 'Seu Jorge',
-    gender: 'm',
-    level: 'Médio',
-    blurb: 'Cauteloso: joga um conjunto por vez, pensa devagar e só encaixa na mesa.',
+  normal: {
+    label: 'Médio',
+    blurb: 'Encaixa pedras na mesa e às vezes reorganiza.',
     budget: 8000,
     extend: true,
     jokers: false,
-    skip: 0.2,
-    rearrange: 0,
-    rearrangeChance: 0,
-    oneSet: true,
+    skip: 0.1,
+    rearrange: 3000,
+    rearrangeChance: 0.25,
     holdJokers: true,
-    think: [0.55, 0.8],
-    lines: { play: ['Devagar e sempre.', 'Um de cada vez.', 'Com calma...'], draw: ['Hmm, nada por ora.', 'Guardo o resto.', 'Vamos esperar.'] },
+    think: [0.35, 0.6],
+    lines: { play: ['Devagar e sempre.', 'Com calma...', 'Pronto.'], draw: ['Hmm, nada por ora.', 'Guardo o resto.', 'Vamos esperar.'] },
   },
-  {
-    id: 'luna',
-    name: 'Luna',
-    gender: 'f',
-    level: 'Difícil',
-    blurb: 'Ousada: despeja tudo de uma vez, mexe na mesa e gasta coringa sem medo.',
-    budget: 10000,
+  hard: {
+    label: 'Difícil',
+    blurb: 'Reorganiza a mesa quase sempre e aproveita bem as pedras.',
+    budget: 15000,
     extend: true,
     jokers: true,
     skip: 0,
-    rearrange: 5000,
-    rearrangeChance: 0.5,
-    oneSet: false,
+    rearrange: 10000,
+    rearrangeChance: 0.7,
     holdJokers: false,
-    think: [0.2, 0.4],
-    lines: { play: ['Olha isso!', 'Tudo na mesa!', 'Ousadia!'], draw: ['Droga!', 'Próxima eu pego.', 'Ai, ai.'] },
+    think: [0.3, 0.5],
+    lines: { play: ['Olha isso!', 'Tudo no lugar.', 'Ousadia!'], draw: ['Droga!', 'Próxima eu pego.', 'Paciência.'] },
   },
-  {
-    id: 'marina',
-    name: 'Marina',
-    gender: 'f',
-    level: 'Difícil',
-    blurb: 'Estrategista: reorganiza a mesa e guarda o coringa para o fim.',
-    budget: 20000,
-    extend: true,
-    jokers: false,
-    skip: 0,
-    rearrange: 15000,
-    rearrangeChance: 0.85,
-    oneSet: false,
-    holdJokers: true,
-    think: [0.5, 0.75],
-    lines: { play: ['Calculado.', 'Tudo no lugar.', 'Mais uma peça do quebra-cabeça.'], draw: ['Paciência.', 'Ainda não é a hora.', 'Guardando o coringa.'] },
-  },
-  {
-    id: 'mestre',
-    name: 'Mestre Kaito',
-    gender: 'm',
-    level: 'Mestre',
-    blurb: 'Mestre: busca máxima, reorganiza a mesa inteira e não erra jogada.',
+  master: {
+    label: 'Mestre',
+    blurb: 'Busca máxima, reorganiza a mesa inteira e não perde jogada.',
     budget: 20000,
     extend: true,
     jokers: true,
     skip: 0,
     rearrange: 40000,
     rearrangeChance: 1,
-    oneSet: false,
     holdJokers: false,
     think: [0.35, 0.55],
     lines: { play: ['Xeque.', 'O caminho é este.', 'Previsível.'], draw: ['Uma pausa estratégica.', 'Interessante...', 'Sem jogada ótima.'] },
   },
-];
+};
+
+/** Quatro nomes por nível (dois homens, duas mulheres). O jogador não escolhe nomes: sorteamos entre eles. */
+const NAMES: Record<BotLevel, { name: string; gender: 'm' | 'f' }[]> = {
+  easy: [
+    { name: 'Davi', gender: 'm' },
+    { name: 'Bia', gender: 'f' },
+    { name: 'Tadeu', gender: 'm' },
+    { name: 'Lia', gender: 'f' },
+  ],
+  normal: [
+    { name: 'Seu Jorge', gender: 'm' },
+    { name: 'Dona Nair', gender: 'f' },
+    { name: 'Paulo', gender: 'm' },
+    { name: 'Rita', gender: 'f' },
+  ],
+  hard: [
+    { name: 'Rafael', gender: 'm' },
+    { name: 'Luna', gender: 'f' },
+    { name: 'Caio', gender: 'm' },
+    { name: 'Marina', gender: 'f' },
+  ],
+  master: [
+    { name: 'Mestre Kaito', gender: 'm' },
+    { name: 'Sensei Aiko', gender: 'f' },
+    { name: 'Mestre Otávio', gender: 'm' },
+    { name: 'Mestra Yara', gender: 'f' },
+  ],
+};
+
+export interface Persona extends LevelCfg {
+  /** id do jogador: "bot-<nível>-<n>" */
+  id: string;
+  name: string;
+  gender: 'm' | 'f';
+  level: BotLevel;
+  /** posição (0..3) entre os nomes do nível, usada para variar o rosto */
+  slot: number;
+}
+
+export const PERSONAS: readonly Persona[] = BOT_LEVELS.flatMap((level) =>
+  NAMES[level].map((n, slot) => ({ ...LEVEL_CFG[level], id: `bot-${level}-${slot}`, name: n.name, gender: n.gender, level, slot })),
+);
+
+export const personaOfBotId = (id: string): Persona | undefined => PERSONAS.find((p) => p.id === id);
+export const isBotId = (id: string): boolean => id.startsWith('bot-');
+
+/** Sorteia `count` bots diferentes do nível (sem repetir nome). */
+export function pickBots(level: BotLevel, count: number, rng: () => number = Math.random): Persona[] {
+  const pool = PERSONAS.filter((p) => p.level === level);
+  const out: Persona[] = [];
+  while (out.length < Math.min(count, pool.length)) {
+    const i = Math.floor(rng() * pool.length);
+    out.push(pool.splice(i, 1)[0]!);
+  }
+  return out;
+}
 
 export const MIN_THINK_MS = 2500;
 /** Quanto o bot espera antes de jogar: fração do tempo do turno (ou 30s se não houver limite). */
-export function thinkDelayMs(p: Persona, turnSeconds: number, rng: () => number = Math.random): number {
+export function thinkDelayMs(p: LevelCfg, turnSeconds: number, rng: () => number = Math.random): number {
   const base = (turnSeconds > 0 ? turnSeconds : 30) * 1000;
   const [lo, hi] = p.think;
   return Math.max(MIN_THINK_MS, Math.min(base - 1500, base * (lo + (hi - lo) * rng())));
 }
-
-export const PERSONA_IDS: readonly PersonaId[] = PERSONAS.map((p) => p.id);
-export const personaById = (id: string): Persona | undefined => PERSONAS.find((p) => p.id === id);
-export const botIdOf = (p: PersonaId): string => `bot-${p}`;
-export const personaOfBotId = (id: string): Persona | undefined => personaById(id.replace(/^bot-/, ''));
 
 function realize(rack: readonly number[], chosen: readonly Cand[]): { sets: number[][]; rest: number[] } {
   const stacks = new Map<number, number[]>();
@@ -180,7 +195,7 @@ function extend(table: SetState[], rest: number[], allowJokers: boolean): number
 }
 
 /** Jogada do bot segundo a personalidade: nova mesa, ou null para comprar uma pedra. */
-export function botMove(state: GameState, persona: Persona = PERSONAS[4]!, rng: () => number = Math.random): SetState[] | null {
+export function botMove(state: GameState, persona: LevelCfg = LEVEL_CFG.master, rng: () => number = Math.random): SetState[] | null {
   const me = state.players[state.turn]!;
   if (me.melded && rng() < persona.skip) return null;
 
@@ -192,8 +207,7 @@ export function botMove(state: GameState, persona: Persona = PERSONAS[4]!, rng: 
   }
   if (persona.holdJokers && me.rack.length > 6) jokers = 0;
 
-  let chosen = packCounts(cnt, jokers, !me.melded, persona.budget);
-  if (chosen && persona.oneSet && me.melded) chosen = [chosen[0]!];
+  const chosen = packCounts(cnt, jokers, !me.melded, persona.budget);
 
   let table: SetState[] = state.table.map((s) => ({ ...s, tiles: s.tiles.slice() }));
   let rest = me.rack.slice();
@@ -233,7 +247,7 @@ export function botMove(state: GameState, persona: Persona = PERSONAS[4]!, rng: 
     }
   };
   consider(simple);
-  if (me.melded && persona.rearrange > 0 && !persona.oneSet && rng() < persona.rearrangeChance) {
+  if (me.melded && persona.rearrange > 0 && rng() < persona.rearrangeChance) {
     const r = solveTable(state.table, me.rack, persona.rearrange);
     if (r) consider(relayout(r.table));
   }

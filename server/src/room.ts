@@ -1,4 +1,4 @@
-import { botMove, botIdOf, thinkDelayMs, personaById, personaOfBotId, type Persona, type PersonaId } from '../../shared/bot';
+import { BOT_LEVELS, LEVEL_CFG, MAX_BOTS, botMove, pickBots, personaOfBotId, thinkDelayMs, type BotLevel, type LevelCfg } from '../../shared/bot';
 import { createGame, currentPlayer, drawTurn, playTurn, removePlayer, salvagePlay, MAX_TIMEOUTS, type GameState } from '../../shared/game';
 import type { SetState } from '../../shared/layout';
 import {
@@ -24,7 +24,7 @@ interface Stored {
   phase: 'lobby' | 'playing' | 'ended';
   lobby: { id: string; name: string }[];
   seats: Record<string, number>;
-  bots: Record<string, PersonaId>;
+  bots: Record<string, BotLevel>;
   botAt: number | null;
   media: Record<string, { cam: boolean; mic: boolean }>;
   game: GameState | null;
@@ -109,7 +109,7 @@ export class GameRoom implements DurableObject {
       melded: false,
       left: false,
       bot: !!s.bots[id],
-      persona: s.bots[id],
+      botLevel: s.bots[id],
       ...extra,
     });
     const players: RoomPlayer[] =
@@ -233,25 +233,24 @@ export class GameRoom implements DurableObject {
         await this.listing();
         return;
       }
-      case 'addBot': {
+      case 'bots': {
         if (me !== s.hostId || s.phase !== 'lobby') return;
-        const persona = personaById(String(msg.persona));
-        if (!persona) return;
-        const id = botIdOf(persona.id);
-        if (s.bots[id]) return this.err(ws, `${persona.name} já está na sala.`);
-        if (s.lobby.length >= MAX_ROOM_PLAYERS) return this.err(ws, 'Sala cheia.');
-        s.lobby.push({ id, name: persona.name });
-        s.bots[id] = persona.id;
-        const used = new Set(Object.values(s.seats));
-        s.seats[id] = SEAT_PREFERENCE.find((x) => !used.has(x)) ?? 0;
+        if (!BOT_LEVELS.includes(msg.level)) return;
+        const humans = s.lobby.filter((p) => !s.bots[p.id]);
+        const want = Math.round(Number(msg.count)) || 0;
+        const count = Math.max(0, Math.min(MAX_BOTS, want, MAX_ROOM_PLAYERS - humans.length));
+        for (const p of s.lobby) if (s.bots[p.id]) delete s.seats[p.id];
+        s.bots = {};
+        s.lobby = humans;
+        for (const persona of pickBots(msg.level, count)) {
+          s.lobby.push({ id: persona.id, name: persona.name });
+          s.bots[persona.id] = persona.level;
+          const used = new Set(Object.values(s.seats));
+          s.seats[persona.id] = SEAT_PREFERENCE.find((x) => !used.has(x)) ?? 0;
+        }
         await this.persist();
         this.broadcast();
         await this.listing();
-        return;
-      }
-      case 'removeBot': {
-        if (me !== s.hostId || s.phase !== 'lobby' || !s.bots[msg.id]) return;
-        await this.dropPlayer(msg.id);
         return;
       }
       case 'seat': {
@@ -342,6 +341,14 @@ export class GameRoom implements DurableObject {
 
     if (s.phase === 'lobby') {
       if (!inLobby) {
+        if (s.lobby.length >= MAX_ROOM_PLAYERS) {
+          const bot = [...s.lobby].reverse().find((p) => s.bots[p.id]);
+          if (bot) {
+            s.lobby = s.lobby.filter((p) => p.id !== bot.id);
+            delete s.bots[bot.id];
+            delete s.seats[bot.id];
+          }
+        }
         if (s.lobby.length >= MAX_ROOM_PLAYERS) {
           this.err(ws, 'Sala cheia.');
           return void ws.close(4003, 'full');
@@ -441,7 +448,7 @@ export class GameRoom implements DurableObject {
       const cur = currentPlayer(g);
       if (cur.isBot) {
         // o bot "pensa" uma parte do tempo do turno; o relógio mostrado é o do turno inteiro, como para humanos
-        s.botAt = Date.now() + thinkDelayMs(personaOfBotId(cur.id) ?? personaById('luna')!, s.turnSeconds);
+        s.botAt = Date.now() + thinkDelayMs(this.botCfg(cur.id), s.turnSeconds);
         s.turnEndsAt = Date.now() + s.turnSeconds * 1000;
         await this.ctx.storage.setAlarm(s.botAt);
         await this.listing();
@@ -510,11 +517,16 @@ export class GameRoom implements DurableObject {
     await this.afterGameChange(g);
   }
 
+  private botCfg(id: string): LevelCfg {
+    const lvl = this.s?.bots[id];
+    return LEVEL_CFG[lvl ?? personaOfBotId(id)?.level ?? 'normal'];
+  }
+
   private async botTurn(): Promise<void> {
     const s = this.s!;
     const g = s.game!;
     const cur = currentPlayer(g);
-    const persona: Persona = personaOfBotId(cur.id) ?? personaById('luna')!;
+    const persona = this.botCfg(cur.id);
     const table = botMove(g, persona);
     let step = table ? playTurn(g, cur.id, table) : null;
     const played = !!step && step.ok;

@@ -239,3 +239,4 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .gamemenu .mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0 10px; }
 .mitem { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 76px; padding: 10px 6px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.07); color: var(--text); font-size: 0.95rem; font-weight: 700; text-align: center; cursor: pointer; }
 .mitem .ic { font-size: 1.5rem; line-height: 1; }
+.avatar.tiny { width: 24px; height: 24px; vertical-align: middle; border-width: 1px; }

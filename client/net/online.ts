@@ -2,7 +2,7 @@ import type { Backend, BackendEvents } from '../backend';
 import { noopEvents } from '../backend';
 import { wsUrl } from '../api';
 import type { SetState } from '../../shared/layout';
-import type { PersonaId, ClientMsg, ServerMsg, TurnSeconds } from '../../shared/protocol';
+import type { BotLevel, ClientMsg, ServerMsg, TurnSeconds } from '../../shared/protocol';
 import type { Profile } from '../store';
 
 export class OnlineBackend implements Backend {
@@ -101,11 +101,8 @@ export class OnlineBackend implements Backend {
   settings(turnSeconds: TurnSeconds): void {
     this.send({ t: 'settings', turnSeconds });
   }
-  addBot(persona: PersonaId): void {
-    this.send({ t: 'addBot', persona });
-  }
-  removeBot(id: string): void {
-    this.send({ t: 'removeBot', id });
+  setBots(count: number, level: BotLevel): void {
+    this.send({ t: 'bots', count, level });
   }
   kick(id: string): void {
     this.send({ t: 'kick', id });

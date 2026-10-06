@@ -22,7 +22,7 @@ import {
 } from '../game/draft';
 import { analyzeSet, arrangeTiles } from '../../shared/rules';
 import { isJoker } from '../../shared/tiles';
-import { PERSONAS, botIdOf, personaOfBotId } from '../../shared/bot';
+import { BOT_LEVELS, LEVEL_CFG, MAX_BOTS, personaOfBotId, type BotLevel } from '../../shared/bot';
 import { personaAvatar } from '../botAvatars';
 import { a11yPanel, modal } from './screens';
 import { relayout, type SetState } from '../../shared/layout';
@@ -68,6 +68,7 @@ export class GameScreen {
   private draft: Draft | null = null;
   private undo: Draft[] = [];
   private selected = new Set<number>();
+  private botLevel: BotLevel = 'normal';
   private btnPlaySel!: HTMLButtonElement;
   private turnBanner = h('div', { class: 'turn-banner hidden', text: '⚡ SUA VEZ! Toque para começar' });
   private nagTimer = 0;
@@ -557,7 +558,7 @@ export class GameScreen {
       box.name.textContent = `${p.isHost ? '♛ ' : ''}${p.name}`;
       box.meta.textContent = v.phase === 'lobby' ? (p.connected ? '' : 'offline') : `${p.rackCount} pedras${p.melded ? ' · abriu' : ''}`;
       const bp = personaOfBotId(p.id);
-      const photo = this.photos.get(p.id) ?? (bp ? personaAvatar(bp.id) : null);
+      const photo = this.photos.get(p.id) ?? (bp ? personaAvatar(bp) : null);
       const key = `${p.name}|${photo ? photo.length : 0}`;
       if (key !== box.avatarKey) {
         box.avatarKey = key;
@@ -675,31 +676,42 @@ export class GameScreen {
     else if (v.phase === 'ended') this.overlay.append(this.resultPanel(v));
   }
 
+  private segment<T extends string | number>(opts: { value: T; label: string; disabled?: boolean }[], cur: T, onPick: (v: T) => void): HTMLElement {
+    const wrap = h('div', { class: 'seg' });
+    for (const o of opts) {
+      wrap.append(h('button', { class: `seg-btn${o.value === cur ? ' active' : ''}`, text: o.label, attrs: { type: 'button', ...(o.disabled ? { disabled: '' } : {}) }, on: { click: () => onPick(o.value) } }));
+    }
+    return wrap;
+  }
+
   private lobbyPanel(v: RoomView): HTMLElement {
     const host = v.hostId === v.you;
     const list = h('ul', { class: 'plist' });
     for (const p of v.players) {
-      const li = h('li', { text: `${p.isHost ? '♛ ' : ''}${p.bot ? '🤖 ' : ''}${p.name}${p.id === v.you ? ' (você)' : ''}${p.connected ? '' : ' · offline'}` });
-      if (host && p.bot) li.append(' ', btn('×', () => this.b.removeBot(p.id), 'ghost small'));
+      const bp = p.bot ? personaOfBotId(p.id) : undefined;
+      const li = h('li', {}, ...(bp ? [h('img', { class: 'avatar tiny', attrs: { src: personaAvatar(bp), alt: '' } }), ' '] : []), `${p.isHost ? '♛ ' : ''}${p.bot ? '🤖 ' : ''}${p.name}${p.id === v.you ? ' (você)' : ''}${p.connected ? '' : ' · offline'}`);
       list.append(li);
     }
-    const free = PERSONAS.filter((p) => !v.players.some((x) => x.id === botIdOf(p.id)));
-    const botRow =
-      host && v.players.length < 4 && free.length > 0
-        ? h(
-            'div',
-            { class: 'bots' },
-            h('p', { class: 'muted', text: 'Adicionar bot (cada um joga de um jeito)' }),
-            ...free.map((p) =>
-              h(
-                'button',
-                { class: 'room bot-pick', attrs: { type: 'button', title: p.blurb }, on: { click: () => this.b.addBot(p.id) } },
-                h('img', { class: 'avatar', attrs: { src: personaAvatar(p.id), alt: p.name } }),
-                h('span', {}, h('b', { text: `${p.name} · ${p.level}` }), h('small', { class: 'muted', text: p.blurb })),
-              ),
-            ),
-          )
-        : null;
+    // bots: um só nível para todos; o número e o nível valem para a sala toda (só o anfitrião muda)
+    const bots = v.players.filter((p) => p.bot);
+    const humans = v.players.length - bots.length;
+    const curLevel: BotLevel = bots[0]?.botLevel ?? this.botLevel;
+    this.botLevel = curLevel;
+    const maxBots = Math.min(MAX_BOTS, 4 - humans);
+    const botRow = host
+      ? h(
+          'div',
+          { class: 'bots' },
+          h('label', { class: 'lbl', text: 'Bots na mesa' }),
+          this.segment([0, 1, 2, 3].map((n) => ({ value: n, label: String(n), disabled: n > maxBots })), bots.length, (n) => this.b.setBots(n, this.botLevel)),
+          h('label', { class: 'lbl', text: 'Nível dos bots' }),
+          this.segment(BOT_LEVELS.map((l) => ({ value: l, label: LEVEL_CFG[l].label })), curLevel, (l) => {
+            this.botLevel = l;
+            this.b.setBots(bots.length, l);
+          }),
+          h('p', { class: 'hint', text: LEVEL_CFG[curLevel].blurb }),
+        )
+      : null;
     const seg = h('div', { class: 'seg' });
     for (const s of TURN_SECONDS_OPTIONS) {
       seg.append(
