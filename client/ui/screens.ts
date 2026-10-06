@@ -1,6 +1,6 @@
 import { createRoom, getRanking, listRooms } from '../api';
 import { getPwa, installApp, applyUpdate, isIos, onPwa } from '../pwa';
-import { avatarColor, loadOfflineSettings, newId, photoFromFile, saveOfflineSettings, saveProfile, type OfflineSettings, type Profile } from '../store';
+import { avatarColor, loadA11y, saveA11y, type A11y, loadOfflineSettings, newId, photoFromFile, saveOfflineSettings, saveProfile, type OfflineSettings, type Profile } from '../store';
 import { NAME_MAX, TURN_SECONDS_OPTIONS, type TurnSeconds } from '../../shared/protocol';
 import { avatarEl, btn, clear, h, toast } from './dom';
 
@@ -113,7 +113,7 @@ export function showMenu(root: HTMLElement, a: MenuActions): () => void {
     h(
       'div',
       { class: 'screen menu' },
-      h('div', { class: 'menu-top' }, who),
+      h('div', { class: 'menu-top' }, who, btn('Aa Visual', () => a11yPanel(), 'small ghost')),
       h('div', { class: 'logo' }, tiles, kami),
       h(
         'div',
@@ -242,6 +242,32 @@ function rulesPanel(): void {
         li('Arrastar: pedra a pedra (✋), conjunto inteiro (▭) ou dividir (✂). Duas mãos / roda do mouse fazem zoom; arraste a mesa vazia para mover a câmera.'),
       ),
       btn('Entendi', () => m.close(), 'primary'),
+    ),
+  );
+}
+
+// ---------- visual / acessibilidade ----------
+export function a11yPanel(onChange?: (a: A11y) => void): void {
+  const cur = loadA11y();
+  const cb = h('input', { attrs: { type: 'checkbox' } });
+  cb.checked = cur.contrast;
+  cb.addEventListener('change', () => {
+    saveA11y({ ...loadA11y(), contrast: cb.checked });
+    onChange?.(loadA11y());
+  });
+  const m = modal(
+    h(
+      'div',
+      { class: 'panel' },
+      h('h2', { text: 'Visual' }),
+      h('label', { class: 'check' }, cb, h('span', { text: 'Alto contraste: pedras brancas, cores bem distintas e um símbolo para cada cor (● ▲ ■ ◆)' })),
+      h('label', { class: 'lbl', text: 'Tamanho das letras e botões' }),
+      segmented([{ value: 0, label: 'Normal' }, { value: 1, label: 'Grande' }, { value: 2, label: 'Extra' }] as const, cur.size, (v) => {
+        saveA11y({ ...loadA11y(), size: v });
+        onChange?.(loadA11y());
+      }),
+      h('p', { class: 'hint', text: 'Na mesa: arraste para rolar, pince ou use ＋ − para aproximar, toque duas vezes num conjunto para ampliá-lo. Para mover uma pedra, segure o dedo nela até vibrar.' }),
+      h('div', { class: 'row' }, btn('Pronto', () => m.close(), 'primary')),
     ),
   );
 }

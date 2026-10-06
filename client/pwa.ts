@@ -74,6 +74,34 @@ export async function applyUpdate(): Promise<void> {
   }
 }
 
+/** Procura versão nova agora (botão "Atualizar"). Sem service worker, só dá para recarregar. */
+export async function checkForUpdate(): Promise<'update' | 'none' | 'unsupported'> {
+  if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return 'unsupported';
+  try {
+    const reg = await navigator.serviceWorker.getRegistration(import.meta.env.BASE_URL);
+    if (!reg) return 'unsupported';
+    if (reg.waiting) return 'update';
+    await reg.update().catch(() => {});
+    if (reg.waiting) return 'update';
+    const w = reg.installing;
+    if (!w) return 'none';
+    return await new Promise((resolve) => {
+      const t = window.setTimeout(() => resolve('none'), 20000);
+      w.addEventListener('statechange', () => {
+        if (w.state === 'installed') {
+          window.clearTimeout(t);
+          resolve('update');
+        } else if (w.state === 'redundant') {
+          window.clearTimeout(t);
+          resolve('none');
+        }
+      });
+    });
+  } catch {
+    return 'none';
+  }
+}
+
 function onMessage(e: MessageEvent): void {
   const d = e.data as { type?: string; done?: number; total?: number; fresh?: boolean; missing?: number } | null;
   if (!d?.type) return;

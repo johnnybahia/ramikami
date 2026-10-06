@@ -6,6 +6,7 @@ export interface BackendEvents {
   onDraft(from: string, table: SetState[]): void;
   onPhoto(id: string, data: string): void;
   onSay(id: string, text: string): void;
+  onNotice(text: string): void;
   onError(msg: string): void;
   onKicked(): void;
   onRtc(from: string, data: unknown): void;
@@ -36,6 +37,7 @@ export const noopEvents: BackendEvents = {
   onDraft() {},
   onPhoto() {},
   onSay() {},
+  onNotice() {},
   onError() {},
   onKicked() {},
   onRtc() {},

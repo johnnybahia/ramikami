@@ -14,6 +14,7 @@ import {
   resolveBoardDrop,
   sortRack,
   splitSet,
+  tidyTable,
   tableWithoutTile,
   MELD_MIN,
   type Draft,
@@ -22,10 +23,11 @@ import { analyzeSet, arrangeTiles } from '../../shared/rules';
 import { isJoker } from '../../shared/tiles';
 import { PERSONAS, botIdOf, personaOfBotId } from '../../shared/bot';
 import { personaAvatar } from '../botAvatars';
+import { a11yPanel } from './screens';
 import { relayout, type SetState } from '../../shared/layout';
 import { TURN_SECONDS_OPTIONS, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
-import { applyUpdate, onPwa, type PwaState } from '../pwa';
-import { avatarColor, type Profile } from '../store';
+import { applyUpdate, checkForUpdate, onPwa, type PwaState } from '../pwa';
+import { avatarColor, loadA11y, type Profile } from '../store';
 import { avatarEl, btn, clear, h, toast } from './dom';
 
 interface PBox {
@@ -91,7 +93,7 @@ export class GameScreen {
   private timerPill = h('div', { class: 'pill timer', text: '' });
   private codePill = h('button', { class: 'pill code', attrs: { type: 'button' } });
   private poolPill = h('button', { class: 'pill pool', attrs: { type: 'button' } });
-  private updatePill = h('button', { class: 'pill update hidden', attrs: { type: 'button' } });
+  private updatePill = h('button', { class: 'pill update', attrs: { type: 'button' } });
   private btnConfirm!: HTMLButtonElement;
   private btnDraw!: HTMLButtonElement;
   private btnUndo!: HTMLButtonElement;
@@ -134,6 +136,7 @@ export class GameScreen {
       this.renderBoxes();
     };
     ev.onError = (m) => toast(m);
+    ev.onNotice = (text) => toast(text, 5000);
     ev.onSay = (id, text) => {
       const who = this.view?.players.find((p) => p.id === id)?.name ?? '';
       toast(`${who}: “${text}”`, 2400);
@@ -148,6 +151,7 @@ export class GameScreen {
 
     if (this.b.mode === 'online') void this.initRtc();
     if (this.o.profile.photo) this.photos.set(this.o.profile.id, this.o.profile.photo);
+    this.scene.setSize(loadA11y().size);
     this.tick = window.setInterval(() => this.tickUi(), 250);
     this.b.connect();
   }
@@ -313,7 +317,7 @@ export class GameScreen {
   }
 
   private sendDraft(): void {
-    if (this.b.mode !== 'online' || !this.myTurn() || !this.draft) return;
+    if (!this.myTurn() || !this.draft) return;
     window.clearTimeout(this.draftTimer);
     this.draftTimer = window.setTimeout(() => this.draft && this.b.draft(relayout(this.draft.table)), 180);
   }
@@ -406,12 +410,15 @@ export class GameScreen {
     const exit = h('button', { class: 'pill exit', text: '✕', attrs: { type: 'button', 'aria-label': 'Sair' }, on: { click: () => this.exit() } });
     this.codePill.addEventListener('click', () => void this.shareRoom());
     this.poolPill.addEventListener('click', () => this.requestDraw());
-    this.updatePill.addEventListener('click', () => {
-      if (this.view?.phase === 'playing') return toast('A atualização será aplicada quando a partida terminar.');
-      void applyUpdate();
-    });
+    this.updatePill.addEventListener('click', () => void this.doUpdate());
     const fit = h('button', { class: 'pill', text: '⌖', attrs: { type: 'button', 'aria-label': 'Ajustar câmera' }, on: { click: () => this.scene.fit() } });
-    this.topbar.append(exit, this.codePill, this.poolPill, this.timerPill, h('span', { class: 'grow' }), this.updatePill, fit);
+    const zoomIn = h('button', { class: 'pill zoom', text: '＋', attrs: { type: 'button', 'aria-label': 'Aproximar' }, on: { click: () => this.scene.zoomBy(0.75) } });
+    const zoomOut = h('button', { class: 'pill zoom', text: '－', attrs: { type: 'button', 'aria-label': 'Afastar' }, on: { click: () => this.scene.zoomBy(1.33) } });
+    const vis = h('button', { class: 'pill', text: 'Aa', attrs: { type: 'button', 'aria-label': 'Visual' }, on: { click: () => a11yPanel((a) => {
+          this.scene.setContrast(a.contrast);
+          this.scene.setSize(a.size);
+        }) } });
+    this.topbar.append(exit, this.codePill, this.poolPill, this.timerPill, h('span', { class: 'grow' }), this.updatePill, zoomOut, zoomIn, fit, vis);
   }
 
   private renderTop(): void {
@@ -423,15 +430,28 @@ export class GameScreen {
     this.tickUi();
   }
 
-  private renderUpdate(): void {
-    const p = this.pwa;
-    const show = !!p?.update;
-    this.updatePill.classList.toggle('hidden', !show);
-    if (show) {
-      const playing = this.view?.phase === 'playing';
-      this.updatePill.textContent = playing ? 'Nova versão (após a partida)' : 'Atualizar';
-      this.updatePill.classList.toggle('ready', !playing);
+  /** Botão "Atualizar": procura a versão mais nova e, se houver, recarrega (com aviso se a partida está em andamento). */
+  private async doUpdate(): Promise<void> {
+    const playing = this.view?.phase === 'playing';
+    if (!this.pwa?.update) {
+      toast('Procurando atualização…', 1500);
+      const r = await checkForUpdate();
+      if (r === 'none') return toast('Você já está com a versão mais recente.');
     }
+    const msg =
+      this.b.mode === 'offline'
+        ? 'Atualizar agora recarrega o jogo e esta partida contra bots será perdida. Continuar?'
+        : playing
+          ? 'Atualizar agora recarrega o jogo. Você volta para a mesma sala em seguida, mas perde o rascunho da jogada atual. Continuar?'
+          : 'Nova versão pronta. Atualizar agora?';
+    if (!window.confirm(msg)) return;
+    void applyUpdate();
+  }
+
+  private renderUpdate(): void {
+    const hasNew = !!this.pwa?.update;
+    this.updatePill.textContent = hasNew ? '↻ Nova versão' : '↻ Atualizar';
+    this.updatePill.classList.toggle('ready', hasNew);
   }
 
   private async shareRoom(): Promise<void> {
@@ -562,6 +582,7 @@ export class GameScreen {
     this.btnUndo = mk('↶', 'Desfazer', () => this.doUndo());
     this.btnReset = mk('⟲', 'Recomeçar a jogada', () => this.doReset());
     const sortNum = mk('1·2·3', 'Ordenar por número', () => this.draft && this.apply(sortRack(this.draft, 'num')));
+    const tidy = mk('▦', 'Arrumar a mesa em linhas', () => this.draft && this.myTurn() && this.apply(tidyTable(this.draft), 'Não coube na mesa.'));
     const sortCol = mk('🎨', 'Ordenar por cor', () => this.draft && this.apply(sortRack(this.draft, 'color')));
     const modeDefs: [Mode, string, string][] = [
       ['tile', '✋', 'Mover pedra'],
@@ -585,7 +606,7 @@ export class GameScreen {
     this.btnPlaySel = h('button', { class: 'btn confirm hidden', attrs: { type: 'button' }, on: { click: () => this.playSelected() } });
     this.btnDraw = h('button', { class: 'btn draw', text: 'Comprar', attrs: { type: 'button' }, on: { click: () => this.requestDraw() } });
     this.btnConfirm = h('button', { class: 'btn confirm', text: 'Confirmar', attrs: { type: 'button' }, on: { click: () => this.doConfirm() } });
-    const left = h('div', { class: 'tools' }, this.btnUndo, this.btnReset, sortNum, sortCol, modes, ...(this.b.mode === 'online' ? [this.btnCam, this.btnMic] : []));
+    const left = h('div', { class: 'tools' }, this.btnUndo, this.btnReset, sortNum, sortCol, tidy, modes, ...(this.b.mode === 'online' ? [this.btnCam, this.btnMic] : []));
     const right = h('div', { class: 'mainact' }, this.btnPlaySel, this.btnDraw, this.btnConfirm);
     this.actionbar.append(left, right);
     this.root.append(this.statusEl, this.turnBanner);
@@ -623,7 +644,7 @@ export class GameScreen {
     } else if (!d.melded) {
       text = `Abertura: ${st.meldPoints}/${MELD_MIN}`;
     } else {
-      text = st.check.reason;
+      text = `${st.check.reason} · no fim do tempo valem só os conjuntos feitos só com sua mão`;
     }
     this.statusEl.textContent = text;
     this.statusEl.classList.toggle('hidden', !text || v.phase !== 'playing');

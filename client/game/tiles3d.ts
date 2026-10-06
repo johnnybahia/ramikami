@@ -9,8 +9,15 @@ export const CELL_W = 1.1;
 export const CELL_D = 1.55;
 
 export const TILE_COLORS = ['#1b1b22', '#1f63c9', '#d12b2b', '#e58a1c'];
+/** alto contraste: quatro cores bem separadas (e cada uma tem um símbolo próprio) */
+export const HC_COLORS = ['#000000', '#0038ff', '#e00000', '#ff8a00'];
 
-const cache = new Map<number, THREE.CanvasTexture>();
+let highContrast = false;
+export const setHighContrast = (on: boolean): void => {
+  highContrast = on;
+};
+
+const cache = new Map<string, THREE.CanvasTexture>();
 
 function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   c.beginPath();
@@ -56,9 +63,61 @@ function drawJoker(c: CanvasRenderingContext2D, w: number, h: number): void {
   }
 }
 
+function drawShape(c: CanvasRenderingContext2D, kind: number, cx: number, cy: number, r: number): void {
+  c.beginPath();
+  if (kind === 0) c.arc(cx, cy, r, 0, Math.PI * 2); // ●
+  else if (kind === 1) {
+    c.moveTo(cx, cy - r); // ▲
+    c.lineTo(cx + r, cy + r * 0.8);
+    c.lineTo(cx - r, cy + r * 0.8);
+    c.closePath();
+  } else if (kind === 2) c.rect(cx - r * 0.85, cy - r * 0.85, r * 1.7, r * 1.7); // ■
+  else {
+    c.moveTo(cx, cy - r * 1.1); // ◆
+    c.lineTo(cx + r * 0.9, cy);
+    c.lineTo(cx, cy + r * 1.1);
+    c.lineTo(cx - r * 0.9, cy);
+    c.closePath();
+  }
+  c.fill();
+}
+
+/** Face de alto contraste: fundo branco, moldura e número grandes na cor, símbolo cheio embaixo. */
+function drawHighContrast(c: CanvasRenderingContext2D, w: number, h: number, id: number): void {
+  c.fillStyle = '#ffffff';
+  c.fillRect(0, 0, w, h);
+  if (isJoker(id)) {
+    c.lineWidth = 16;
+    c.strokeStyle = '#000';
+    roundRect(c, 12, 12, w - 24, h - 24, 24);
+    c.stroke();
+    c.fillStyle = '#000';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.font = '900 150px Arial, Helvetica, sans-serif';
+    c.fillText('★', w / 2, h * 0.38);
+    c.font = '900 56px Arial, Helvetica, sans-serif';
+    c.fillText('CORINGA', w / 2, h * 0.74);
+    return;
+  }
+  const color = HC_COLORS[tileColor(id)]!;
+  const n = tileNum(id);
+  c.lineWidth = 18;
+  c.strokeStyle = color;
+  roundRect(c, 12, 12, w - 24, h - 24, 24);
+  c.stroke();
+  c.fillStyle = color;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  c.font = `900 ${n >= 10 ? 150 : 215}px Arial Black, Arial, Helvetica, sans-serif`;
+  c.fillText(String(n), w / 2, h * 0.4);
+  if (n === 6 || n === 9) c.fillRect(w / 2 - 50, h * 0.4 + 92, 100, 11);
+  drawShape(c, tileColor(id), w / 2, h * 0.8, 40);
+}
+
 /** Textura da face (número colorido + anel, ou coringa), desenhada por código. */
 export function faceTexture(id: number, maxAniso = 4): THREE.CanvasTexture {
-  const key = isJoker(id) ? -1 : tileColor(id) * 13 + tileNum(id);
+  const key = `${highContrast ? 'h' : 'n'}${isJoker(id) ? -1 : tileColor(id) * 13 + tileNum(id)}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const w = 256;
@@ -77,7 +136,9 @@ export function faceTexture(id: number, maxAniso = 4): THREE.CanvasTexture {
   c.strokeStyle = 'rgba(120,95,50,0.28)';
   roundRect(c, 10, 10, w - 20, h - 20, 22);
   c.stroke();
-  if (isJoker(id)) {
+  if (highContrast) {
+    drawHighContrast(c, w, h, id);
+  } else if (isJoker(id)) {
     drawJoker(c, w, h);
   } else {
     const color = TILE_COLORS[tileColor(id)]!;
@@ -133,6 +194,12 @@ export class Tile {
     this.face.position.y = TILE_H + 0.003;
     this.group.add(this.body, this.face);
     this.group.visible = false;
+  }
+
+  refreshFace(aniso: number): void {
+    const mat = this.face.material as THREE.MeshStandardMaterial;
+    mat.map = faceTexture(this.id, aniso);
+    mat.needsUpdate = true;
   }
 
   setTint(hex: number, intensity: number): void {

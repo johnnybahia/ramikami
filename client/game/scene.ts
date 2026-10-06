@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { COLS, ROWS, type SetState } from '../../shared/layout';
 import { TILE_COUNT } from '../../shared/tiles';
+import { setHighContrast } from './tiles3d';
 import { resolveBoardDrop, tableWithoutTile } from './draft';
 import { CELL_D, CELL_W, TILE_D, TILE_H, TILE_W, Tile, feltTexture, woodTexture } from './tiles3d';
 
@@ -35,6 +36,7 @@ type Interaction =
   | null
   | { type: 'tile'; id: number; startX: number; startY: number; active: boolean }
   | { type: 'set'; setId: number; anchor: THREE.Vector3; startX: number; startY: number; active: boolean; dx: number; dz: number }
+  | { type: 'hold'; id: number; startX: number; startY: number; timer: number }
   | { type: 'pan'; anchor: THREE.Vector3 }
   | { type: 'pool'; startX: number; startY: number }
   | { type: 'split'; setId: number; index: number; startX: number; startY: number }
@@ -43,6 +45,9 @@ type Interaction =
 const ELEV = THREE.MathUtils.degToRad(64);
 const FOV = 38;
 const DRAG_THRESHOLD = 7;
+const HOLD_MS = 330;
+const HOLD_SLOP = 12;
+const DOUBLE_TAP_MS = 380;
 
 export class TableScene {
   private renderer: THREE.WebGLRenderer;
@@ -63,6 +68,10 @@ export class TableScene {
   private raycaster = new THREE.Raycaster();
   private pointers = new Map<number, { x: number; y: number }>();
   private it: Interaction = null;
+  private lastP = { x: 0, y: 0 };
+  private lastTap: { setId: number; t: number } | null = null;
+  private aniso = 4;
+  private sizeF = 1;
   private rafId = 0;
   private lastT = 0;
   private dirty = true;
@@ -94,6 +103,7 @@ export class TableScene {
     container.prepend(this.canvas);
 
     const aniso = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    this.aniso = aniso;
     for (let i = 0; i < TILE_COUNT; i++) this.tiles.push(new Tile(i, aniso));
 
     this.buildBoard(coarse ? 1024 : 2048);
@@ -303,17 +313,18 @@ export class TableScene {
   private layoutRack(n: number): void {
     const W = this.W;
     const H = this.H;
-    let cols = Math.max(7, Math.min(16, Math.floor(W / (CELL_W * 40))));
+    const minCols = this.sizeF > 1 ? 5 : 7;
+    let cols = Math.max(minCols, Math.min(16, Math.floor(W / (CELL_W * 40 * this.sizeF))));
     const need = (c: number): { rows: number; h: number } => {
       const rows = Math.max(1, Math.ceil(Math.max(n, 1) / c));
       const u = W / (c * CELL_W + 0.9);
       return { rows, h: rows * CELL_D * u + 0.9 * u };
     };
-    while (cols < 16 && need(cols).h > H * 0.4) cols++;
+    while (cols < 16 && need(cols).h > H * (this.sizeF > 1 ? 0.5 : 0.4)) cols++;
     const { rows, h } = need(cols);
     this.cols = cols;
     this.rows = rows;
-    const nextH = Math.max(H * 0.17, Math.min(H * 0.42, h));
+    const nextH = Math.max(H * 0.17, Math.min(H * (this.sizeF > 1 ? 0.52 : 0.42), h));
     if (Math.abs(nextH - this.rackH) > 0.5) {
       this.rackH = nextH;
       this.updateCams();
@@ -399,6 +410,43 @@ export class TableScene {
     }
   }
 
+  /** Tamanho da interface (0 normal, 1 grande, 2 extra): pedras do cavalete maiores. */
+  setSize(size: number): void {
+    this.sizeF = [1, 1.25, 1.5][size] ?? 1;
+    this.layoutRack(this.state.rack.length);
+    this.syncTiles();
+    this.dirty = true;
+  }
+
+  /** Alto contraste: troca as faces de todas as pedras. */
+  setContrast(on: boolean): void {
+    setHighContrast(on);
+    for (const t of this.tiles) t.refreshFace(this.aniso);
+    this.dirty = true;
+  }
+
+  zoomBy(factor: number): void {
+    this.cam.dist *= factor;
+    this.clampCam();
+    this.applyCam();
+  }
+
+  /** Aproxima a câmera para o conjunto ocupar boa parte da tela. */
+  zoomToSet(setId: number): void {
+    const set = this.state.table.find((x) => x.id === setId);
+    if (!set) return;
+    const a = this.boardPos(set.x, 0, set.z);
+    const b = this.boardPos(set.x, set.tiles.length - 1, set.z);
+    const aspect = this.W / Math.max(1, this.H - this.rackH);
+    const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+    const w = Math.max(b.x - a.x + 2.4, 6);
+    this.cam.tx = (a.x + b.x) / 2;
+    this.cam.tz = a.z;
+    this.cam.dist = w / 2 / (t * aspect);
+    this.clampCam();
+    this.applyCam();
+  }
+
   fit(): void {
     const sets = this.state.table;
     let minX = -5.5;
@@ -479,6 +527,7 @@ export class TableScene {
   private onDown = (e: PointerEvent): void => {
     this.canvas.setPointerCapture(e.pointerId);
     const p = this.rel(e);
+    this.lastP = p;
     this.pointers.set(e.pointerId, p);
     if (this.pointers.size === 2) {
       this.cancelActive();
@@ -504,6 +553,10 @@ export class TableScene {
         this.it = { type: 'set', setId: loc.set.id, anchor: g ?? new THREE.Vector3(), startX: p.x, startY: p.y, active: false, dx: 0, dz: 0 };
       } else if (this.state.mode === 'split' && loc) {
         this.it = { type: 'split', setId: loc.set.id, index: loc.index, startX: p.x, startY: p.y };
+      } else if (e.pointerType !== 'mouse') {
+        // no toque, a pedra da mesa só levanta se o dedo ficar parado: arrastar rápido rola a mesa
+        const timer = window.setTimeout(() => this.liftHeld(), HOLD_MS);
+        this.it = { type: 'hold', id, startX: p.x, startY: p.y, timer };
       } else {
         this.it = { type: 'tile', id, startX: p.x, startY: p.y, active: false };
       }
@@ -529,7 +582,19 @@ export class TableScene {
     if (g) this.it = { type: 'pan', anchor: g };
   }
 
+  /** O dedo ficou parado sobre a pedra: ela levanta (vibra de leve) e passa a seguir o dedo. */
+  private liftHeld(): void {
+    const it = this.it;
+    if (!it || it.type !== 'hold') return;
+    navigator.vibrate?.(18);
+    this.it = { type: 'tile', id: it.id, startX: it.startX, startY: it.startY, active: true };
+    this.tiles[it.id]!.dragging = true;
+    this.dragTile(it.id, this.lastP);
+    this.dirty = true;
+  }
+
   private cancelActive(): void {
+    if (this.it && this.it.type === 'hold') window.clearTimeout(this.it.timer);
     if (this.it && this.it.type === 'tile' && this.it.active) this.tiles[this.it.id]!.dragging = false;
     this.it = null;
     this.hideHints();
@@ -538,9 +603,18 @@ export class TableScene {
 
   private onMove = (e: PointerEvent): void => {
     const p = this.rel(e);
+    this.lastP = p;
     if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, p);
     const it = this.it;
     if (!it) return;
+    if (it.type === 'hold') {
+      if (Math.hypot(p.x - it.startX, p.y - it.startY) > HOLD_SLOP) {
+        window.clearTimeout(it.timer);
+        this.it = null;
+        this.startPan(p);
+      }
+      return;
+    }
     if (it.type === 'pinch') {
       if (this.pointers.size >= 2) {
         const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }];
@@ -643,6 +717,18 @@ export class TableScene {
     this.it = null;
     this.hideHints();
     if (!it) return;
+    if (it.type === 'hold') {
+      window.clearTimeout(it.timer);
+      const loc = this.locate(it.id);
+      if (loc) {
+        const now = performance.now();
+        if (this.lastTap && this.lastTap.setId === loc.set.id && now - this.lastTap.t < DOUBLE_TAP_MS) {
+          this.zoomToSet(loc.set.id);
+          this.lastTap = null;
+        } else this.lastTap = { setId: loc.set.id, t: now };
+      }
+      return;
+    }
     if (it.type === 'pool') {
       if (Math.hypot(p.x - it.startX, p.y - it.startY) <= DRAG_THRESHOLD * 2) this.handlers.onPoolTap();
     } else if (it.type === 'split') {

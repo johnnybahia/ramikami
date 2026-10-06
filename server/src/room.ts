@@ -1,5 +1,5 @@
 import { botMove, botIdOf, thinkDelayMs, personaById, personaOfBotId, type Persona, type PersonaId } from '../../shared/bot';
-import { createGame, currentPlayer, drawTurn, playTurn, removePlayer, MAX_TIMEOUTS, type GameState } from '../../shared/game';
+import { createGame, currentPlayer, drawTurn, playTurn, removePlayer, salvagePlay, MAX_TIMEOUTS, type GameState } from '../../shared/game';
 import type { SetState } from '../../shared/layout';
 import {
   MAX_PHOTO_CHARS,
@@ -52,6 +52,8 @@ function sanitizeTable(raw: unknown): SetState[] | null {
 export class GameRoom implements DurableObject {
   private s: Stored | null = null;
   private photos: Record<string, string> = {};
+  /** última mesa em rascunho do jogador da vez (só em memória: se o servidor reiniciar, vale o estado inicial) */
+  private draftTable: SetState[] | null = null;
   private loaded: Promise<void>;
 
   constructor(
@@ -283,6 +285,7 @@ export class GameRoom implements DurableObject {
         if (s.phase !== 'playing' || !s.game || currentPlayer(s.game).id !== me) return;
         const table = sanitizeTable(msg.table);
         if (!table) return;
+        this.draftTable = table;
         for (const [id, other] of this.online()) if (id !== me) this.send(other, { t: 'draft', from: me, table });
         return;
       }
@@ -427,6 +430,7 @@ export class GameRoom implements DurableObject {
   private async afterGameChange(g: GameState): Promise<void> {
     const s = this.s!;
     s.game = g;
+    this.draftTable = null;
     if (g.phase === 'ended') {
       s.phase = 'ended';
       s.turnEndsAt = null;
@@ -491,6 +495,14 @@ export class GameRoom implements DurableObject {
       return;
     }
     const cur = currentPlayer(s.game);
+    // tempo esgotado: ficam só os conjuntos feitos inteiramente com pedras da mão; o resto volta ao início do turno
+    const kept = this.draftTable ? salvagePlay(s.game, cur.id, this.draftTable) : null;
+    if (kept) {
+      const ws = this.online().get(cur.id);
+      if (ws) this.send(ws, { t: 'notice', text: 'Tempo esgotado: ficaram na mesa só os conjuntos montados com pedras da sua mão. O resto voltou ao início da jogada.' });
+      await this.afterGameChange(kept);
+      return;
+    }
     const step = drawTurn(s.game, cur.id, true);
     if (!step.ok) return;
     let g = step.state;

@@ -112,6 +112,25 @@ export function placeSets(d: Draft, sets: readonly (readonly number[])[]): Draft
   return n;
 }
 
+/** Alinha todos os conjuntos da mesa em linhas, sem mudar o que há em cada um. */
+export function tidyTable(d: Draft): Draft | null {
+  const n = cloneDraft(d);
+  const order = n.table.slice().sort((a, b) => a.z - b.z || a.x - b.x);
+  let x = 0;
+  let z = 0;
+  for (const s of order) {
+    if (x + s.tiles.length > COLS) {
+      x = 0;
+      z++;
+    }
+    if (z >= ROWS) return null;
+    s.x = x;
+    s.z = z;
+    x += s.tiles.length + 1;
+  }
+  return n;
+}
+
 export function splitSet(d: Draft, setId: number, index: number): Draft | null {
   const s = d.table.find((x) => x.id === setId);
   if (!s || index <= 0 || index >= s.tiles.length) return null;
