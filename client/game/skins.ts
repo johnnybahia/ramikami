@@ -17,7 +17,7 @@ export const SKINS: readonly Skin[] = [
   { id: 'verde', name: 'Pano verde', swatch: ['#1d6a47', '#0b1410'], bg: '#0b1410' },
   { id: 'bahia', name: 'Bahia', swatch: ['#0f2c66', '#c8102e'], bg: '#08142e' },
   { id: 'vitoria', name: 'Vitória', swatch: ['#1c0e10', '#c4161c'], bg: '#0d0607' },
-  { id: 'corinthians', name: 'Corinthians', swatch: ['#f2f2f2', '#161616'], bg: '#0b0b0b', logoAlpha: 0.85 },
+  { id: 'corinthians', name: 'Corinthians', swatch: ['#c4c4c4', '#161616'], bg: '#0b0b0b', logoAlpha: 0.6 },
   { id: 'palmeiras', name: 'Palmeiras', swatch: ['#0b4a2a', '#f2f2f2'], bg: '#04170d' },
   { id: 'natal', name: 'Natal', swatch: ['#14452e', '#b3202a'], bg: '#0a1f15' },
   { id: 'anonovo', name: 'Ano Novo', swatch: ['#0e1a3a', '#d9b45a'], bg: '#060b1c' },
@@ -63,12 +63,12 @@ const LOOKS: Record<Exclude<SkinId, 'verde'>, Look> = {
     stripes: { color: '#c4161c', alpha: 0.05, step: 46 },
   },
   corinthians: {
-    base: '#e8e8e8',
+    base: '#c4c4c4',
     lines: [
       { color: '#141414', width: 7, inset: 26 },
       { color: '#141414', width: 2.5, inset: 44 },
     ],
-    glow: 'rgba(255,255,255,0.35)',
+    glow: 'rgba(255,255,255,0.18)',
   },
   palmeiras: {
     base: '#0b4a2a',

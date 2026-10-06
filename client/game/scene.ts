@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { COLS, ROWS, type SetState } from '../../shared/layout';
 import { TILE_COUNT } from '../../shared/tiles';
 import { setHighContrast } from './tiles3d';
-import { acceptingSets, resolveBoardDrop, suggestDrop, tableWithoutTile } from './draft';
+import { acceptingSets, newSetSpot, resolveBoardDrop, suggestDrop, tableWithoutTile } from './draft';
 import { CELL_D, CELL_W, TILE_D, TILE_H, TILE_W, Tile, woodTexture } from './tiles3d';
 import { onSkinChange, skinById, skinTexture, type SkinId } from './skins';
 
@@ -85,11 +85,17 @@ export class TableScene {
   private poolGroup = new THREE.Group();
   private rackTray!: THREE.Mesh;
   private hintBoardCell!: THREE.Mesh;
+  /** vaga guia: onde o próximo conjunto novo deve ir para a mesa ficar compacta */
+  private hintGuide!: THREE.Mesh;
   private hintBoardBar!: THREE.Mesh;
   private hintRackBar!: THREE.Mesh;
   private ro: ResizeObserver;
   private disposed = false;
   private fitted = false;
+  /** enquadra a mesa sozinha (o mínimo de zoom manual); some quando o jogador mexe na câmera */
+  private autoFit = true;
+  private camGoal: { tx: number; tz: number; dist: number } | null = null;
+  private boundsKey = '';
 
   constructor(
     private container: HTMLElement,
@@ -255,10 +261,13 @@ export class TableScene {
     this.hintBoardCell = new THREE.Mesh(new THREE.PlaneGeometry(TILE_W, TILE_D), glow(0xffe28a, 0.35));
     this.hintBoardCell.rotation.x = -Math.PI / 2;
     this.hintBoardCell.position.y = 0.03;
+    this.hintGuide = new THREE.Mesh(new THREE.PlaneGeometry(TILE_W + 0.3, TILE_D + 0.3), glow(0x7fe6ff, 0.42));
+    this.hintGuide.rotation.x = -Math.PI / 2;
+    this.hintGuide.position.y = 0.035;
     this.hintBoardBar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, TILE_D + 0.2), glow(0xffe28a, 0.9));
     this.hintRackBar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, TILE_D + 0.2), glow(0xffe28a, 0.9));
-    for (const h of [this.hintBoardCell, this.hintBoardBar, this.hintRackBar]) h.visible = false;
-    this.boardScene.add(this.hintBoardCell, this.hintBoardBar);
+    for (const h of [this.hintBoardCell, this.hintGuide, this.hintBoardBar, this.hintRackBar]) h.visible = false;
+    this.boardScene.add(this.hintBoardCell, this.hintGuide, this.hintBoardBar);
     this.rackScene.add(this.hintRackBar);
   }
 
@@ -348,7 +357,8 @@ export class TableScene {
     this.poolGroup.visible = s.poolCount > 0;
     this.layoutRack(s.rack.length);
     this.syncTiles();
-    if (!this.fitted && s.table.length > 0) this.fit();
+    if (!this.fitted && s.table.length > 0) this.fitNow();
+    else if (s.table.length > 0 && !this.it) this.followTable();
     this.dirty = true;
   }
 
@@ -482,6 +492,7 @@ export class TableScene {
   }
 
   zoomBy(factor: number): void {
+    this.manualCam();
     this.cam.dist *= factor;
     this.clampCam();
     this.applyCam();
@@ -489,6 +500,7 @@ export class TableScene {
 
   /** Aproxima a câmera para o conjunto ocupar boa parte da tela. */
   zoomToSet(setId: number): void {
+    this.manualCam();
     const set = this.state.table.find((x) => x.id === setId);
     if (!set) return;
     const a = this.boardPos(set.x, 0, set.z);
@@ -503,7 +515,8 @@ export class TableScene {
     this.applyCam();
   }
 
-  fit(): void {
+  /** Quadro (centro e distância) que mostra a mesa toda com as pedras o maior possível. */
+  private computeFit(): { tx: number; tz: number; dist: number; key: string } {
     const sets = this.state.table;
     let minX = -5.5;
     let maxX = 5.5;
@@ -524,15 +537,64 @@ export class TableScene {
       }
       this.fitted = true;
     }
-    const w = Math.max(maxX - minX, 11) + 1.5;
+    const w = Math.max(maxX - minX, 11) + 3;
     const h = Math.max(maxZ - minZ, 5) + 1.5;
     const aspect = this.W / Math.max(1, this.H - this.rackH);
     const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
-    this.cam.tx = (minX + maxX) / 2;
-    this.cam.tz = (minZ + maxZ) / 2;
-    this.cam.dist = Math.max(w / 2 / (t * aspect), h / 2 / (t * Math.sin(ELEV)));
-    this.clampCam();
+    const goal = {
+      tx: Math.max(-BOARD_W / 2, Math.min(BOARD_W / 2, (minX + maxX) / 2)),
+      tz: Math.max(-BOARD_D / 2 - 3, Math.min(BOARD_D / 2, (minZ + maxZ) / 2)),
+      dist: Math.max(8, Math.min(75, Math.max(w / 2 / (t * aspect), h / 2 / (t * Math.sin(ELEV))))),
+    };
+    return { ...goal, key: [minX, maxX, minZ, maxZ].map((v) => Math.round(v * 2)).join(',') };
+  }
+
+  /** ⌖: enquadra a mesa toda (suave) e volta ao enquadramento automático. */
+  fit(): void {
+    this.autoFit = true;
+    const g = this.computeFit();
+    this.boundsKey = g.key;
+    this.camGoal = { tx: g.tx, tz: g.tz, dist: g.dist };
+    this.dirty = true;
+  }
+
+  private fitNow(): void {
+    const g = this.computeFit();
+    this.boundsKey = g.key;
+    this.cam.tx = g.tx;
+    this.cam.tz = g.tz;
+    this.cam.dist = g.dist;
     this.applyCam();
+  }
+
+  /** O que está na mesa mudou (jogada de alguém, bots): mantém tudo à vista sem o jogador precisar dar zoom. */
+  private followTable(): void {
+    const g = this.computeFit();
+    if (g.key === this.boundsKey) return;
+    this.boundsKey = g.key;
+    // se o jogador mexeu na câmera, só reenquadra quando algo passa a ficar fora da tela
+    if (!this.autoFit && this.allVisible()) return;
+    this.autoFit = true;
+    this.camGoal = { tx: g.tx, tz: g.tz, dist: g.dist };
+  }
+
+  private allVisible(): boolean {
+    this.boardCam.updateMatrixWorld();
+    const v = new THREE.Vector3();
+    for (const s of this.state.table) {
+      for (const idx of [0, s.tiles.length - 1]) {
+        const p = this.boardPos(s.x, idx, s.z);
+        v.set(p.x, TILE_H, p.z).project(this.boardCam);
+        if (Math.abs(v.x) > 0.94 || v.y > 0.94 || v.y < -0.94) return false;
+      }
+    }
+    return true;
+  }
+
+  /** A câmera foi mexida à mão: para de enquadrar sozinha. */
+  private manualCam(): void {
+    this.autoFit = false;
+    this.camGoal = null;
   }
 
   private clampCam(): void {
@@ -676,6 +738,7 @@ export class TableScene {
       if (this.pointers.size >= 2) {
         const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }];
         const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        this.manualCam();
         this.cam.dist = it.startCam * (it.startDist / d);
         this.clampCam();
         this.applyCam();
@@ -685,6 +748,7 @@ export class TableScene {
     if (it.type === 'pan') {
       const g = this.ground('board', p.x, p.y);
       if (g) {
+        this.manualCam();
         this.cam.tx += it.anchor.x - g.x;
         this.cam.tz += it.anchor.z - g.z;
         this.clampCam();
@@ -756,9 +820,16 @@ export class TableScene {
         this.hintBoardBar.position.set(edge.x - CELL_W / 2, 0.25, edge.z);
         this.hintBoardBar.visible = true;
       } else {
-        const c = this.boardPos(act.x, 0, act.z);
+        // pedra solta: mostra onde ela cai e, em azul, o lugar guia (próxima vaga compacta) para a mesa ficar arrumada
+        const sp = newSetSpot(this.state.table, id, cx, cz);
+        const c = this.boardPos(sp.x, 0, sp.z);
         this.hintBoardCell.position.set(c.x, 0.03, c.z);
         this.hintBoardCell.visible = true;
+        if (sp.guide && (sp.guide.x !== sp.x || sp.guide.z !== sp.z)) {
+          const g = this.boardPos(sp.guide.x, 0, sp.guide.z);
+          this.hintGuide.position.set(g.x, 0.035, g.z);
+          this.hintGuide.visible = true;
+        }
       }
     }
     this.dirty = true;
@@ -774,6 +845,7 @@ export class TableScene {
   private hideHints(): void {
     this.hintBoardBar.visible = false;
     this.hintBoardCell.visible = false;
+    this.hintGuide.visible = false;
     this.hintRackBar.visible = false;
   }
 
@@ -833,6 +905,7 @@ export class TableScene {
     e.preventDefault();
     const p = this.rel(e);
     if (this.regionAt(p.y) !== 'board') return;
+    this.manualCam();
     this.cam.dist *= Math.exp(e.deltaY * 0.0012);
     this.clampCam();
     this.applyCam();
@@ -851,6 +924,21 @@ export class TableScene {
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
     let moving = false;
+    if (this.camGoal) {
+      const k = 1 - Math.exp(-dt * 9);
+      const g = this.camGoal;
+      this.cam.tx += (g.tx - this.cam.tx) * k;
+      this.cam.tz += (g.tz - this.cam.tz) * k;
+      this.cam.dist += (g.dist - this.cam.dist) * k;
+      if (Math.abs(g.tx - this.cam.tx) < 0.02 && Math.abs(g.tz - this.cam.tz) < 0.02 && Math.abs(g.dist - this.cam.dist) < 0.05) {
+        this.cam.tx = g.tx;
+        this.cam.tz = g.tz;
+        this.cam.dist = g.dist;
+        this.camGoal = null;
+      }
+      this.applyCam();
+      moving = true;
+    }
     for (const t of this.tiles) if (t.present && t.step(dt)) moving = true;
     if (moving || this.dirty) {
       this.idleFrames = 0;
