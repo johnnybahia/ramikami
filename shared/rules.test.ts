@@ -196,3 +196,13 @@ describe('pickBots', () => {
     }
   });
 });
+
+describe('createGame: quem começa', () => {
+  it('usa o jogador indicado; sem indicação ou id desconhecido, sorteia', () => {
+    const inits = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }];
+    for (const id of ['a', 'b', 'c']) expect(currentPlayer(createGame(inits, mulberry32(1), id)).id).toBe(id);
+    const g = createGame(inits, mulberry32(2), 'zzz');
+    expect(g.turn).toBeGreaterThanOrEqual(0);
+    expect(g.turn).toBeLessThan(3);
+  });
+});

@@ -674,9 +674,9 @@ export class GameRoom implements DurableObject {
   }
 
   /** Começa uma partida com estes jogadores (do saguão ou da sessão em andamento). */
-  private async beginGame(order: { id: string; name: string }[]): Promise<void> {
+  private async beginGame(order: { id: string; name: string }[], first?: string): Promise<void> {
     const s = this.s!;
-    s.game = createGame(order.map((p) => ({ id: p.id, name: p.name, isBot: !!s.bots[p.id] })), Math.random);
+    s.game = createGame(order.map((p) => ({ id: p.id, name: p.name, isBot: !!s.bots[p.id] })), Math.random, first);
     s.phase = 'playing';
     s.recorded = false;
     await this.afterGameChange(s.game);
@@ -711,7 +711,10 @@ export class GameRoom implements DurableObject {
     s.series.awaiting = null;
     if (!stayIds.has(s.hostId)) s.hostId = stay.find((p) => !p.isBot)?.id ?? s.hostId;
     const order = [...stay].sort((a, b) => (s.seats[a.id] ?? 0) - (s.seats[b.id] ?? 0));
-    await this.beginGame(order);
+    // numa sequência de jogos, quem venceu a última partida começa a nova (empate: sorteia entre os vencedores)
+    const winners = (g.result?.winners ?? []).filter((id) => stayIds.has(id));
+    const first = winners.length > 0 ? winners[Math.floor(Math.random() * winners.length)] : undefined;
+    await this.beginGame(order, first);
     return true;
   }
 
