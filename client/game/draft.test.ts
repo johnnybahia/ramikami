@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dropNew, dropOnSet, dropToRack, draftStatus, newDraft, resolveBoardDrop, splitSet } from './draft';
+import { dropNew, dropOnSet, dropToRack, draftStatus, newDraft, resolveBoardDrop, splitSet, tidyTable } from './draft';
 
 const T = (color: number, num: number) => color * 13 + (num - 1);
 
@@ -35,5 +35,15 @@ describe('draft', () => {
     expect(resolveBoardDrop(table, 7.4, 2.5)).toEqual({ kind: 'insert', setId: 1, index: 3 });
     expect(resolveBoardDrop(table, 4.3, 2.5)).toEqual({ kind: 'insert', setId: 1, index: 0 });
     expect(resolveBoardDrop(table, 12.5, 2.5)).toEqual({ kind: 'new', x: 12, z: 2 });
+  });
+});
+
+describe('tidyTable', () => {
+  it('alinha em linhas sem mudar o conteúdo dos conjuntos', () => {
+    const d = newDraft([{ id: 1, tiles: [0, 1, 2], x: 20, z: 9 }, { id: 2, tiles: [13, 14, 15, 16], x: 3, z: 2 }], [], true);
+    const t = tidyTable(d)!;
+    expect(t.table.map((s) => s.tiles).sort()).toEqual([[0, 1, 2], [13, 14, 15, 16]].sort());
+    expect(t.table.every((s) => s.z === 0)).toBe(true);
+    expect(t.table.map((s) => s.x).sort((a, b) => a - b)).toEqual([0, 5]);
   });
 });

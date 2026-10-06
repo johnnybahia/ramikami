@@ -97,7 +97,7 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .stage { position: absolute; inset: 0; }
 .scene-canvas { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
 
-.topbar { position: absolute; top: calc(var(--safe-t) + 8px); left: calc(var(--safe-l) + 8px); right: calc(var(--safe-r) + 8px); display: flex; gap: 8px; align-items: center; pointer-events: none; z-index: 5; }
+.topbar { position: absolute; top: calc(var(--safe-t) + 8px); left: calc(var(--safe-l) + 8px); right: calc(var(--safe-r) + 8px); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; pointer-events: none; z-index: 5; }
 .topbar > * { pointer-events: auto; }
 .grow { flex: 1; pointer-events: none !important; }
 .pill { border: 1px solid var(--line); background: rgba(10, 18, 14, 0.78); color: var(--text); padding: 8px 12px; border-radius: 999px; font-weight: 700; font-size: 0.9rem; cursor: pointer; min-height: 38px; backdrop-filter: blur(4px); }
@@ -213,3 +213,11 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .bot-pick .avatar { width: 40px; height: 40px; flex: none; }
 .bot-pick span { display: grid; gap: 2px; }
 .bot-pick small { font-size: 0.72rem; line-height: 1.25; }
+
+.pill.zoom { min-width: 46px; min-height: 46px; font-size: 1.25rem; padding: 6px 10px; }
+:root[data-contrast='high'] .status { background: #000; color: #fff; border-color: #fff; font-size: 1rem; }
+:root[data-contrast='high'] .status.bad { color: #ff7a7a; }
+:root[data-contrast='high'] .status.good { color: #7dff9b; }
+:root[data-contrast='high'] .act, :root[data-contrast='high'] .pill { border-color: #fff; }
+.act, .btn { min-height: 46px; }
+.tools { flex-wrap: wrap; row-gap: 6px; }

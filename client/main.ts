@@ -2,7 +2,8 @@ import './style.css';
 import { LocalBackend } from './local';
 import { OnlineBackend } from './net/online';
 import { registerPwa } from './pwa';
-import { loadProfile, type OfflineSettings, type Profile } from './store';
+import { applyA11yToPage, loadA11y, loadProfile, type OfflineSettings, type Profile } from './store';
+import { setHighContrast } from './game/tiles3d';
 import { GameScreen } from './ui/gameScreen';
 import { toast } from './ui/dom';
 import { showMenu, showProfile } from './ui/screens';
@@ -10,6 +11,8 @@ import { showMenu, showProfile } from './ui/screens';
 registerPwa();
 
 const root = document.getElementById('app')!;
+applyA11yToPage();
+setHighContrast(loadA11y().contrast);
 let profile: Profile | null = loadProfile();
 let stopMenu: (() => void) | null = null;
 let game: GameScreen | null = null;
