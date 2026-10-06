@@ -26,7 +26,7 @@ import { BOT_LEVELS, LEVEL_CFG, MAX_BOTS, personaOfBotId, type BotLevel } from '
 import { personaAvatar } from '../botAvatars';
 import { a11yPanel, modal } from './screens';
 import { relayout, type SetState } from '../../shared/layout';
-import { TURN_SECONDS_OPTIONS, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
+import { BEST_OF_OPTIONS, TURN_SECONDS_OPTIONS, type BestOf, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
 import { applyUpdate, checkForUpdate, onPwa, type PwaState } from '../pwa';
 import { avatarColor, loadA11y, type Profile } from '../store';
 import { avatarEl, btn, clear, h, toast } from './dom';
@@ -719,7 +719,7 @@ export class GameScreen {
           class: `seg-btn${v.turnSeconds === s ? ' active' : ''}`,
           text: `${s}s`,
           attrs: { type: 'button', ...(host ? {} : { disabled: '' }) },
-          on: { click: () => this.b.settings(s as TurnSeconds) },
+          on: { click: () => this.b.settings({ turnSeconds: s as TurnSeconds }) },
         }),
       );
     }
@@ -734,6 +734,8 @@ export class GameScreen {
       h('h2', { text: `Sala ${v.code}` }),
       h('p', { class: 'muted', text: `${v.players.length}/4 jogadores · tempo por jogada` }),
       seg,
+      h('label', { class: 'lbl', text: 'Sessão: melhor de (todas as partidas são jogadas)' }),
+      this.segment(BEST_OF_OPTIONS.map((n) => ({ value: n as BestOf, label: String(n) })), v.bestOf, (n) => host && this.b.settings({ bestOf: n })),
       list,
       botRow,
       h('div', { class: 'row' }, btn('Convidar', () => void this.shareRoom())),
@@ -750,6 +752,8 @@ export class GameScreen {
 
   private resultPanel(v: RoomView): HTMLElement {
     const r = v.result;
+    const ser = v.series;
+    const host = v.hostId === v.you;
     const rows = h('ol', { class: 'results' });
     if (r) {
       const sorted = v.players.slice().sort((a, b) => (r.points[a.id] ?? 0) - (r.points[b.id] ?? 0));
@@ -760,15 +764,46 @@ export class GameScreen {
     }
     const names = r ? v.players.filter((p) => r.winners.includes(p.id)).map((p) => p.name).join(' e ') : '';
     const row = h('div', { class: 'row' });
-    if (this.o.onRematch) row.append(btn('Jogar de novo', () => this.rematch(), 'primary'));
-    row.append(btn('Voltar ao menu', () => this.exit(true), this.o.onRematch ? 'ghost' : 'primary'));
+    const kids: (HTMLElement | null)[] = [];
+    if (ser) {
+      const board = h('table', { class: 'board' }, h('tr', {}, h('th', { text: 'Placar da sessão' }), h('th', { text: 'Vitórias' }), h('th', { text: 'Pontos' })));
+      for (const s of ser.rows) {
+        const champ = ser.championIds.includes(s.id);
+        board.append(h('tr', { class: champ ? 'win' : '' }, h('td', { text: `${champ ? '🏆 ' : ''}${s.name}` }), h('td', { text: String(s.wins) }), h('td', { text: String(s.points) })));
+      }
+      kids.push(board);
+      const aw = ser.awaiting;
+      if (ser.over && ser.championIds.length > 0) {
+        const champs = ser.rows.filter((x) => ser.championIds.includes(x.id)).map((x) => x.name).join(' e ');
+        kids.push(h('p', { class: 'muted', text: `Sessão encerrada: ${champs} ${ser.championIds.length > 1 ? 'empataram' : 'é o campeão'}!` }));
+      }
+      if (aw && aw.ids.includes(v.you) && !aw.confirmed.includes(v.you)) {
+        kids.push(h('p', { class: 'hint', text: 'O anfitrião quer jogar mais uma partida. Você aceita? (responda em até 30s)' }));
+        row.append(btn('Aceitar', () => this.b.confirm(true), 'primary'), btn('Sair', () => this.b.confirm(false), 'ghost'));
+      } else if (aw) {
+        const pend = ser.rows.filter((x) => aw.ids.includes(x.id) && !aw.confirmed.includes(x.id)).map((x) => x.name).join(', ');
+        kids.push(h('p', { class: 'hint', text: pend ? `Aguardando confirmação de: ${pend}…` : 'Começando…' }));
+        row.append(btn('Voltar ao menu', () => this.exit(true), 'ghost'));
+      } else if (host) {
+        if (ser.over) row.append(btn('Jogar mais uma', () => this.b.more(), 'primary'));
+        else row.append(btn(`Próxima partida (${ser.done + 1} de ${ser.bestOf})`, () => this.b.next(), 'primary'));
+        row.append(btn('Encerrar sessão', () => this.b.endSession(), 'ghost'));
+      } else {
+        kids.push(h('p', { class: 'hint', text: ser.over ? 'Aguardando o anfitrião decidir se joga mais uma…' : 'Aguardando o anfitrião iniciar a próxima partida…' }));
+        row.append(btn('Voltar ao menu', () => this.exit(true), 'ghost'));
+      }
+    } else {
+      if (this.o.onRematch) row.append(btn('Jogar de novo', () => this.rematch(), 'primary'));
+      row.append(btn('Voltar ao menu', () => this.exit(true), this.o.onRematch ? 'ghost' : 'primary'));
+    }
     return h(
       'div',
       { class: 'panel result' },
-      h('h2', { text: names ? `${names} venceu!` : 'Fim de jogo' }),
-      h('p', { class: 'muted', text: `${r ? REASONS[r.reason] : ''} Vence quem tem menos pontos na mão.` }),
+      h('h2', { text: names ? `${names} venceu${r && r.winners.length > 1 ? 'm' : ''}!` : 'Fim de jogo' }),
+      h('p', { class: 'muted', text: `${ser ? `Partida ${ser.done} de ${ser.bestOf}. ` : ''}${r ? REASONS[r.reason] : ''} Vence quem tem menos pontos na mão.` }),
       rows,
-      this.b.mode === 'online' ? h('p', { class: 'hint', text: 'Pontuação registrada no ranking (menor média = melhor).' }) : null,
+      ...kids,
+      this.b.mode === 'online' ? h('p', { class: 'hint', text: 'Cada partida soma no ranking geral (menor média = melhor).' }) : null,
       row,
     );
   }

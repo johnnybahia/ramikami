@@ -11,7 +11,7 @@ const newCode = (): string => Array.from({ length: 5 }, () => CODE_ALPHABET[Math
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Key',
 };
 const json = (data: unknown, status = 200): Response => Response.json(data, { status, headers: cors });
 
@@ -62,6 +62,14 @@ export default {
     if (url.pathname === '/api/ranking' && req.method === 'GET') {
       const r = await env.RANKING.get(env.RANKING.idFromName('global')).fetch('https://ranking/top?limit=50');
       return json(await r.json());
+    }
+
+    // zerar o ranking geral: curl -X POST -H "X-Admin-Key: <senha>" https://SEU-SITE/api/ranking/reset
+    if (url.pathname === '/api/ranking/reset' && req.method === 'POST') {
+      const key = req.headers.get('X-Admin-Key') ?? '';
+      if (!env.ADMIN_KEY || key.length !== env.ADMIN_KEY.length || key !== env.ADMIN_KEY) return json({ error: 'não autorizado' }, 401);
+      await env.RANKING.get(env.RANKING.idFromName('global')).fetch('https://ranking/reset', { method: 'POST' });
+      return json({ ok: true });
     }
 
     if (url.pathname === '/api/ice' && req.method === 'GET') return json({ iceServers: await iceServers(env) });

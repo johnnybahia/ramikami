@@ -58,6 +58,7 @@ export class LocalBackend implements Backend {
       phase: g.phase,
       hostId: this.profile.id,
       turnSeconds: (this.cfg.turnSeconds || 60) as TurnSeconds,
+      bestOf: 3,
       isPublic: false,
       you: this.profile.id,
       players,
@@ -139,6 +140,10 @@ export class LocalBackend implements Backend {
   start(): void {}
   seat(): void {}
   settings(): void {}
+  next(): void {}
+  more(): void {}
+  confirm(): void {}
+  endSession(): void {}
   kick(): void {}
   setBots(): void {}
   media(): void {}

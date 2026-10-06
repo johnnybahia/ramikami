@@ -3,23 +3,36 @@ import { createGame, currentPlayer, drawTurn, playTurn, removePlayer, salvagePla
 import type { SetState } from '../../shared/layout';
 import {
   MAX_PHOTO_CHARS,
+  BEST_OF_OPTIONS,
+  CONFIRM_SECONDS,
   MAX_ROOM_PLAYERS,
   NAME_MAX,
   SEAT_PREFERENCE,
   TURN_SECONDS_OPTIONS,
   type ClientMsg,
   type RoomPlayer,
+  type BestOf,
   type RoomView,
+  type SeriesRow,
+  type SeriesView,
   type ServerMsg,
   type TurnSeconds,
 } from '../../shared/protocol';
 import type { RecordEntry } from './ranking';
 import type { Env } from './env';
 
+interface Series {
+  done: number;
+  stats: Record<string, SeriesRow>;
+  awaiting: { ids: string[]; confirmed: string[]; until: number } | null;
+}
+
 interface Stored {
   code: string;
   hostId: string;
   turnSeconds: TurnSeconds;
+  bestOf: BestOf;
+  series: Series | null;
   isPublic: boolean;
   phase: 'lobby' | 'playing' | 'ended';
   lobby: { id: string; name: string }[];
@@ -38,6 +51,8 @@ const IDLE_ROOM_MS = 10 * 60 * 1000;
 /** No saguão, quem perde a conexão (ex.: saiu para mandar o convite) tem este tempo para voltar. */
 const LOBBY_GRACE_MS = 5 * 60 * 1000;
 const OFFLINE_TURN_SECONDS = 8;
+/** Placar na tela depois do fim: a sala some se ninguém continuar. */
+const ENDED_IDLE_MS = 30 * 60 * 1000;
 const MAX_MSG = 100_000;
 
 const cleanName = (n: unknown): string => String(n ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, NAME_MAX) || 'Jogador';
@@ -69,6 +84,8 @@ export class GameRoom implements DurableObject {
       if (this.s) {
         this.s.bots ??= {};
         this.s.away ??= {};
+        this.s.bestOf ??= 3;
+        this.s.series ??= null;
       }
       this.photos = (await ctx.storage.get<Record<string, string>>('photos')) ?? {};
     });
@@ -129,6 +146,8 @@ export class GameRoom implements DurableObject {
       phase: s.phase,
       hostId: s.hostId,
       turnSeconds: s.turnSeconds,
+      bestOf: s.bestOf,
+      series: this.seriesView(),
       isPublic: s.isPublic,
       you: forId,
       players,
@@ -141,6 +160,16 @@ export class GameRoom implements DurableObject {
       serverNow: Date.now(),
       result: g?.result,
     };
+  }
+
+  private seriesView(): SeriesView | undefined {
+    const s = this.s!;
+    if (!s.series) return undefined;
+    const rows = Object.values(s.series.stats).sort((a, b) => b.wins - a.wins || a.points - b.points);
+    const over = s.series.done >= s.bestOf;
+    const top = rows[0];
+    const championIds = over && top ? rows.filter((r) => r.wins === top.wins && r.points === top.points).map((r) => r.id) : [];
+    return { bestOf: s.bestOf, done: s.series.done, over, rows, championIds, awaiting: s.series.awaiting };
   }
 
   private broadcast(): void {
@@ -190,7 +219,7 @@ export class GameRoom implements DurableObject {
       if (this.s) return new Response('exists', { status: 409 });
       const body = (await req.json()) as { code: string; turnSeconds: number; isPublic: boolean };
       const turnSeconds = (TURN_SECONDS_OPTIONS as readonly number[]).includes(body.turnSeconds) ? (body.turnSeconds as TurnSeconds) : 60;
-      this.s = { code: body.code, hostId: '', turnSeconds, isPublic: !!body.isPublic, phase: 'lobby', lobby: [], seats: {}, bots: {}, away: {}, botAt: null, media: {}, game: null, turnEndsAt: null, recorded: false };
+      this.s = { code: body.code, hostId: '', turnSeconds, bestOf: 3, series: null, isPublic: !!body.isPublic, phase: 'lobby', lobby: [], seats: {}, bots: {}, away: {}, botAt: null, media: {}, game: null, turnEndsAt: null, recorded: false };
       await this.persist();
       await this.ctx.storage.setAlarm(Date.now() + IDLE_ROOM_MS);
       return new Response('ok');
@@ -229,14 +258,56 @@ export class GameRoom implements DurableObject {
         const ready = s.lobby.filter((p) => s.bots[p.id] || here.has(p.id));
         if (ready.length < 2) return this.err(ws, 'São necessários pelo menos 2 jogadores conectados.');
         const order = [...ready].sort((a, b) => (s.seats[a.id] ?? 0) - (s.seats[b.id] ?? 0));
-        s.game = createGame(order.map((p) => ({ id: p.id, name: p.name, isBot: !!s.bots[p.id] })), Math.random);
-        s.phase = 'playing';
-        await this.afterGameChange(s.game);
+        s.series = { done: 0, stats: {}, awaiting: null };
+        await this.beginGame(order);
+        return;
+      }
+      case 'next': {
+        if (me !== s.hostId || s.phase !== 'ended' || !s.series || s.series.done >= s.bestOf) return;
+        const ok = await this.continueSeries(false);
+        if (!ok) this.err(ws, 'São necessários pelo menos 2 jogadores conectados.');
+        return;
+      }
+      case 'more': {
+        if (me !== s.hostId || s.phase !== 'ended' || !s.series || s.series.done < s.bestOf || s.series.awaiting) return;
+        await this.askMore();
+        return;
+      }
+      case 'confirm': {
+        const aw = s.series?.awaiting;
+        if (!aw || s.phase !== 'ended' || !aw.ids.includes(me)) return;
+        if (msg.yes) {
+          if (!aw.confirmed.includes(me)) aw.confirmed.push(me);
+        } else {
+          aw.ids = aw.ids.filter((x) => x !== me);
+          aw.confirmed = aw.confirmed.filter((x) => x !== me);
+          const w = this.online().get(me);
+          if (w) {
+            this.send(w, { t: 'kicked' });
+            w.close(4001, 'declined');
+          }
+        }
+        if (aw.ids.every((id) => aw.confirmed.includes(id))) {
+          await this.continueSeries(true);
+        } else {
+          await this.persist();
+          this.broadcast();
+        }
+        return;
+      }
+      case 'endSession': {
+        if (me !== s.hostId || s.phase !== 'ended') return;
+        for (const w of this.online().values()) {
+          this.send(w, { t: 'notice', text: 'A sessão foi encerrada pelo anfitrião.' });
+          this.send(w, { t: 'kicked' });
+        }
+        await this.destroy();
         return;
       }
       case 'settings': {
         if (me !== s.hostId || s.phase !== 'lobby') return;
         if (msg.turnSeconds && (TURN_SECONDS_OPTIONS as readonly number[]).includes(msg.turnSeconds)) s.turnSeconds = msg.turnSeconds;
+        if (msg.bestOf && (BEST_OF_OPTIONS as readonly number[]).includes(msg.bestOf)) s.bestOf = msg.bestOf;
         await this.persist();
         this.broadcast();
         await this.listing();
@@ -274,7 +345,20 @@ export class GameRoom implements DurableObject {
         return;
       }
       case 'submit': {
-        if (s.phase !== 'playing' || !s.game) return;
+        if (s.phase === 'ended') {
+      const aw = s.series?.awaiting;
+      if (aw && Date.now() >= aw.until - 100) {
+        // quem não respondeu no prazo conta como "não"
+        aw.ids = aw.ids.filter((id) => aw.confirmed.includes(id));
+        await this.continueSeries(true);
+      } else if (aw) {
+        await this.ctx.storage.setAlarm(aw.until);
+      } else {
+        await this.destroy();
+      }
+      return;
+    }
+    if (s.phase !== 'playing' || !s.game) return;
         const table = sanitizeTable(msg.table);
         if (!table) return this.err(ws, 'Mesa inválida.');
         const step = playTurn(s.game, me, table);
@@ -456,7 +540,8 @@ export class GameRoom implements DurableObject {
     if (g.phase === 'ended') {
       s.phase = 'ended';
       s.turnEndsAt = null;
-      await this.ctx.storage.deleteAlarm();
+      if (s.series) s.series.awaiting = null;
+      await this.ctx.storage.setAlarm(Date.now() + ENDED_IDLE_MS);
       await this.record(g);
       await this.listing();
     } else {
@@ -485,6 +570,16 @@ export class GameRoom implements DurableObject {
     const s = this.s!;
     if (s.recorded || !g.result) return;
     s.recorded = true;
+    if (s.series) {
+      s.series.done++;
+      for (const p of g.players) {
+        const row = (s.series.stats[p.id] ??= { id: p.id, name: p.name, wins: 0, points: 0, games: 0 });
+        row.name = p.name;
+        row.games++;
+        row.points += g.result.points[p.id] ?? 0;
+        if (g.result.winners.includes(p.id)) row.wins++;
+      }
+    }
     // anti-farm: partidas relâmpago (alguém saiu logo no começo) não entram no ranking
     if (g.turnNo < g.players.length * 3 && g.result.reason !== 'empty') return;
     const entries: RecordEntry[] = g.players.filter((p) => !p.isBot).map((p) => ({ id: p.id, name: p.name, points: g.result!.points[p.id] ?? 0, won: g.result!.winners.includes(p.id) }));
@@ -538,6 +633,68 @@ export class GameRoom implements DurableObject {
     let g = step.state;
     if (g.players.find((p) => p.id === cur.id)!.timeouts >= MAX_TIMEOUTS) g = removePlayer(g, cur.id);
     await this.afterGameChange(g);
+  }
+
+  /** Começa uma partida com estes jogadores (do saguão ou da sessão em andamento). */
+  private async beginGame(order: { id: string; name: string }[]): Promise<void> {
+    const s = this.s!;
+    s.game = createGame(order.map((p) => ({ id: p.id, name: p.name, isBot: !!s.bots[p.id] })), Math.random);
+    s.phase = 'playing';
+    s.recorded = false;
+    await this.afterGameChange(s.game);
+  }
+
+  /** Quem segue na próxima partida: bots + humanos conectados que ainda não saíram (e, se `onlyConfirmed`, os que aceitaram). */
+  private async continueSeries(onlyConfirmed: boolean): Promise<boolean> {
+    const s = this.s!;
+    const g = s.game;
+    if (!g || !s.series) return false;
+    const here = new Set(this.online().keys());
+    const confirmed = new Set(s.series.awaiting?.confirmed ?? []);
+    const stay = g.players.filter((p) => !p.left && (p.isBot || (here.has(p.id) && (!onlyConfirmed || confirmed.has(p.id)))));
+    if (stay.filter((p) => !p.isBot).length < 1 || stay.length < 2) {
+      if (onlyConfirmed) await this.finishSession('Sessão encerrada: não há jogadores suficientes para continuar.');
+      return false;
+    }
+    // quem não segue sai da sala (o placar dele já ficou registrado na sessão)
+    const stayIds = new Set(stay.map((p) => p.id));
+    for (const p of g.players) {
+      if (stayIds.has(p.id)) continue;
+      s.lobby = s.lobby.filter((x) => x.id !== p.id);
+      delete s.seats[p.id];
+      delete s.bots[p.id];
+      delete this.photos[p.id];
+      const w = this.online().get(p.id);
+      if (w) {
+        this.send(w, { t: 'kicked' });
+        w.close(4001, 'not continuing');
+      }
+    }
+    s.series.awaiting = null;
+    if (!stayIds.has(s.hostId)) s.hostId = stay.find((p) => !p.isBot)?.id ?? s.hostId;
+    const order = [...stay].sort((a, b) => (s.seats[a.id] ?? 0) - (s.seats[b.id] ?? 0));
+    await this.beginGame(order);
+    return true;
+  }
+
+  private async askMore(): Promise<void> {
+    const s = this.s!;
+    const g = s.game;
+    if (!g || !s.series) return;
+    const humans = g.players.filter((p) => !p.isBot && !p.left).map((p) => p.id);
+    s.series.awaiting = { ids: humans, confirmed: [s.hostId], until: Date.now() + CONFIRM_SECONDS * 1000 };
+    await this.ctx.storage.setAlarm(s.series.awaiting.until);
+    if (humans.every((id) => s.series!.awaiting!.confirmed.includes(id))) return void (await this.continueSeries(true));
+    await this.persist();
+    this.broadcast();
+  }
+
+  private async finishSession(text: string): Promise<void> {
+    for (const w of this.online().values()) {
+      this.send(w, { t: 'notice', text });
+      this.send(w, { t: 'kicked' });
+    }
+    await this.destroy();
   }
 
   private botCfg(id: string): LevelCfg {
