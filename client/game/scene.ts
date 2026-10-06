@@ -103,6 +103,7 @@ export class TableScene {
   private bigTiles = false;
   private rackAuto = false;
   private rackPeek = false;
+  private insetB = 0;
   private camGoal: { tx: number; tz: number; dist: number } | null = null;
   private boundsKey = '';
 
@@ -311,7 +312,7 @@ export class TableScene {
 
   private ndc(region: Region, x: number, y: number): THREE.Vector2 {
     if (region === 'rack') return new THREE.Vector2((x / this.W) * 2 - 1, -(((y - (this.H - this.rackH)) / this.rackH) * 2 - 1));
-    return new THREE.Vector2((x / this.W) * 2 - 1, -((y / (this.H - this.rackH)) * 2 - 1));
+    return new THREE.Vector2((x / this.W) * 2 - 1, -((y / this.boardH()) * 2 - 1));
   }
 
   private ground(region: Region, x: number, y: number): THREE.Vector3 | null {
@@ -329,7 +330,7 @@ export class TableScene {
     const cam = region === 'rack' ? this.rackCam : this.boardCam;
     cam.updateMatrixWorld();
     const top = this.rackH > 0 ? (region === 'rack' ? this.H - this.rackH : 0) : 0;
-    const hgt = region === 'rack' ? this.rackH : this.H - this.rackH;
+    const hgt = region === 'rack' ? this.rackH : this.boardH();
     const toPx = (v: THREE.Vector3): { sx: number; sy: number } => ({ sx: ((v.x + 1) / 2) * this.W, sy: top + ((1 - v.y) / 2) * hgt });
     const c = new THREE.Vector3();
     const e = new THREE.Vector3();
@@ -370,7 +371,11 @@ export class TableScene {
 
   // ---------- estado ----------
   setState(s: SceneState): void {
-    if (s.canEditBoard !== this.state.canEditBoard) this.rackPeek = false;
+    if (s.canEditBoard !== this.state.canEditBoard) {
+      this.rackPeek = false;
+      this.autoFit = true; // cada vez começa enquadrado de novo
+      this.boundsKey = '';
+    }
     this.state = s;
     this.poolGroup.visible = s.poolCount > 0;
     this.layoutRack(s.rack.length);
@@ -395,6 +400,20 @@ export class TableScene {
     this.layoutRack(this.state.rack.length);
     this.syncTiles();
     this.dirty = true;
+  }
+
+  /** Altura (px) da barra de ações que cobre o pé da mesa: o zoom automático enquadra só o que fica visível acima dela. */
+  setInsetBottom(px: number): void {
+    const next = Math.max(0, Math.round(px));
+    if (next === this.insetB) return;
+    this.insetB = next;
+    this.updateCams();
+    if (this.autoFit && this.fitted) this.fit();
+    this.dirty = true;
+  }
+
+  private boardH(): number {
+    return Math.max(1, this.H - this.rackH - this.insetB);
   }
 
   private rackCollapsed(): boolean {
@@ -600,7 +619,7 @@ export class TableScene {
     if (!set) return;
     const a = this.boardPos(set.x, 0, set.z);
     const b = this.boardPos(set.x, set.tiles.length - 1, set.z);
-    const aspect = this.W / Math.max(1, this.H - this.rackH);
+    const aspect = this.W / this.boardH();
     const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
     const w = Math.max(b.x - a.x + 2.4, 6);
     this.cam.tx = (a.x + b.x) / 2;
@@ -632,9 +651,10 @@ export class TableScene {
       }
       this.fitted = true;
     }
-    const w = Math.max(maxX - minX, 11) + 3;
-    const h = Math.max(maxZ - minZ, 5) + 1.5;
-    const aspect = this.W / Math.max(1, this.H - this.rackH);
+    const empty = sets.length === 0;
+    const w = (empty ? Math.max(maxX - minX, 11) : maxX - minX) + 1.6;
+    const h = (empty ? Math.max(maxZ - minZ, 5) : maxZ - minZ) + 0.8;
+    const aspect = this.W / this.boardH();
     const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
     let dist = Math.max(8, Math.min(75, Math.max(w / 2 / (t * aspect), h / 2 / (t * Math.sin(ELEV)))));
     if (this.bigTiles) dist = Math.min(dist, Math.max(8, (18 * CELL_W + 3) / 2 / (t * aspect)));
@@ -670,9 +690,7 @@ export class TableScene {
     if (g.key === this.boundsKey) return;
     this.boundsKey = g.key;
     // na minha vez a câmera não mexe enquanto monto (senão o enquadramento muda debaixo do dedo): só se algo sair da tela
-    if (this.state.canEditBoard) {
-      if (this.bigTiles || this.allVisible()) return;
-    } else if (!this.autoFit && (this.bigTiles || this.allVisible())) {
+    if (!this.autoFit && (this.bigTiles || this.allVisible())) {
       // se o jogador mexeu na câmera, só reenquadra quando algo passa a ficar fora da tela
       return;
     }
@@ -714,7 +732,10 @@ export class TableScene {
   }
 
   private updateCams(): void {
-    this.boardCam.aspect = this.W / Math.max(1, this.H - this.rackH);
+    // o enquadramento usa só a parte da mesa que não fica atrás da barra de ações (altura V); o desenho ocupa a região toda (R)
+    const v = this.boardH();
+    this.boardCam.aspect = this.W / v;
+    this.boardCam.setViewOffset(this.W, v, 0, 0, this.W, Math.max(1, this.H - this.rackH));
     this.boardCam.updateProjectionMatrix();
   }
 

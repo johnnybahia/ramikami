@@ -539,6 +539,7 @@ export class GameScreen {
     this.actionbar.style.bottom = `${rh}px`;
     this.root.style.setProperty('--rack-h', `${rh}px`);
     this.root.style.setProperty('--bar-h', `${this.actionbar.offsetHeight}px`);
+    this.scene.setInsetBottom(this.actionbar.classList.contains('hidden') ? 0 : this.actionbar.offsetHeight);
     this.root.style.setProperty('--head-h', `${this.head.offsetHeight}px`);
   }
 
