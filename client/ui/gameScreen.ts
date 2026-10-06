@@ -66,6 +66,7 @@ export class GameScreen {
   private btnPlaySel!: HTMLButtonElement;
   private turnBanner = h('div', { class: 'turn-banner hidden', text: '⚡ SUA VEZ! Toque para começar' });
   private nagTimer = 0;
+  private autoMediaDone = false;
   private btnCam!: HTMLButtonElement;
   private btnMic!: HTMLButtonElement;
   private mode: Mode = 'tile';
@@ -172,6 +173,15 @@ export class GameScreen {
     }
     this.b.media(this.rtc.camOn, this.rtc.micOn);
     this.renderBoxes();
+    if (this.view?.phase === 'lobby') this.renderOverlay();
+  }
+
+  /** Aplica a preferência do perfil (câmera/microfone) uma vez, ao entrar na sala. */
+  private autoMedia(): void {
+    if (this.autoMediaDone || !this.rtc || !this.me()) return;
+    this.autoMediaDone = true;
+    if (this.o.profile.cam) void this.toggleMedia('cam');
+    if (this.o.profile.mic) void this.toggleMedia('mic');
   }
 
   // ---------- visão do servidor ----------
@@ -227,6 +237,7 @@ export class GameScreen {
       if (!prev || prev.phase === 'lobby') d = sortRack(d, 'num');
       this.draft = d;
     }
+    this.autoMedia();
     if (v.turnId !== this.lastTurnId) {
       this.lastTurnId = v.turnId;
       if (v.turnId === v.you && v.phase === 'playing') {
@@ -650,7 +661,12 @@ export class GameScreen {
       seg,
       list,
       h('div', { class: 'row' }, btn('Convidar', () => void this.shareRoom())),
-      h('p', { class: 'hint', text: 'Dica: ligue a câmera e o microfone no seu quadro (📷 🎤). Fica desligado até você ligar.' }),
+      h(
+        'div',
+        { class: 'row' },
+        btn(this.rtc?.camOn ? '📷 Câmera ligada' : '🚫 Entrar sem câmera', () => void this.toggleMedia('cam'), this.rtc?.camOn ? 'primary' : ''),
+        btn(this.rtc?.micOn ? '🎤 Microfone ligado' : '🔇 Entrar sem microfone', () => void this.toggleMedia('mic'), this.rtc?.micOn ? 'primary' : ''),
+      ),
       actions,
       h('div', { class: 'row' }, btn('Sair da sala', () => this.exit(true), 'ghost')),
     );

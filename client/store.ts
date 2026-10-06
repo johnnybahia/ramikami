@@ -4,6 +4,9 @@ export interface Profile {
   id: string;
   name: string;
   photo: string | null;
+  /** preferência: entrar nas salas online já com câmera/microfone ligados */
+  cam?: boolean;
+  mic?: boolean;
 }
 
 const KEY = 'ramikami_profile_v1';
@@ -13,7 +16,7 @@ export function loadProfile(): Profile | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const p = JSON.parse(raw) as Profile;
-    if (typeof p.id === 'string' && p.id.length >= 8 && typeof p.name === 'string') return { id: p.id, name: p.name.slice(0, NAME_MAX), photo: p.photo ?? null };
+    if (typeof p.id === 'string' && p.id.length >= 8 && typeof p.name === 'string') return { id: p.id, name: p.name.slice(0, NAME_MAX), photo: p.photo ?? null, cam: !!p.cam, mic: !!p.mic };
   } catch {
     /* navegador bloqueou o armazenamento */
   }
