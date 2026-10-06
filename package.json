@@ -1,0 +1,34 @@
+{
+  "name": "ramikami",
+  "version": "0.1.0",
+  "description": "Rami-kami: jogo de pedras 3D, 2 a 4 jogadores, online e offline",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "server:dev": "wrangler dev -c server/wrangler.toml",
+    "server:deploy": "wrangler deploy -c server/wrangler.toml",
+    "deploy": "npm run build && wrangler deploy -c server/wrangler.toml",
+    "e2e:server": "node scripts/e2e-server.mjs",
+    "icons": "python3 scripts/make_icons.py"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261006.1",
+    "@types/three": "^0.186.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3",
+    "wrangler": "^4.147.0"
+  },
+  "type": "module",
+  "private": "true"
+}

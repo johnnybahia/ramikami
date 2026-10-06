@@ -1,0 +1,716 @@
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { COLS, ROWS, type SetState } from '../../shared/layout';
+import { TILE_COUNT } from '../../shared/tiles';
+import { resolveBoardDrop, tableWithoutTile } from './draft';
+import { CELL_D, CELL_W, TILE_D, TILE_H, TILE_W, Tile, feltTexture, woodTexture } from './tiles3d';
+
+export const BOARD_W = COLS * CELL_W;
+export const BOARD_D = ROWS * CELL_D;
+
+export type Mode = 'tile' | 'set' | 'split';
+type Region = 'board' | 'rack';
+
+export interface SceneState {
+  table: SetState[];
+  rack: number[];
+  placed: Set<number>;
+  valid: Map<number, boolean>;
+  canEditBoard: boolean;
+  mode: Mode;
+  poolCount: number;
+}
+
+export interface SceneHandlers {
+  onRackDrop(id: number, index: number): void;
+  onBoardDrop(id: number, cx: number, cz: number): void;
+  onSetMove(setId: number, dx: number, dz: number): void;
+  onSplit(setId: number, index: number): void;
+  onPoolTap(): void;
+}
+
+type Interaction =
+  | null
+  | { type: 'tile'; id: number; startX: number; startY: number; active: boolean }
+  | { type: 'set'; setId: number; anchor: THREE.Vector3; startX: number; startY: number; active: boolean; dx: number; dz: number }
+  | { type: 'pan'; anchor: THREE.Vector3 }
+  | { type: 'pool'; startX: number; startY: number }
+  | { type: 'split'; setId: number; index: number; startX: number; startY: number }
+  | { type: 'pinch'; startDist: number; startCam: number };
+
+const ELEV = THREE.MathUtils.degToRad(64);
+const FOV = 38;
+const DRAG_THRESHOLD = 7;
+
+export class TableScene {
+  private renderer: THREE.WebGLRenderer;
+  private canvas: HTMLCanvasElement;
+  private boardScene = new THREE.Scene();
+  private rackScene = new THREE.Scene();
+  private boardCam = new THREE.PerspectiveCamera(FOV, 1, 0.5, 220);
+  private rackCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 50);
+  private tiles: Tile[] = [];
+  private tileScene: (Region | null)[] = new Array(TILE_COUNT).fill(null);
+  private state: SceneState = { table: [], rack: [], placed: new Set(), valid: new Map(), canEditBoard: false, mode: 'tile', poolCount: 0 };
+  private cam = { tx: 0, tz: 0, dist: 28 };
+  private W = 1;
+  private H = 1;
+  private rackH = 120;
+  private cols = 9;
+  private rows = 2;
+  private raycaster = new THREE.Raycaster();
+  private pointers = new Map<number, { x: number; y: number }>();
+  private it: Interaction = null;
+  private rafId = 0;
+  private lastT = 0;
+  private dirty = true;
+  private idleFrames = 0;
+  private poolGroup = new THREE.Group();
+  private rackTray!: THREE.Mesh;
+  private hintBoardCell!: THREE.Mesh;
+  private hintBoardBar!: THREE.Mesh;
+  private hintRackBar!: THREE.Mesh;
+  private ro: ResizeObserver;
+  private disposed = false;
+  private fitted = false;
+
+  constructor(
+    private container: HTMLElement,
+    private handlers: SceneHandlers,
+  ) {
+    const coarse = matchMedia('(pointer: coarse)').matches;
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarse ? 1.75 : 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.95;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.setScissorTest(true);
+    this.canvas = this.renderer.domElement;
+    this.canvas.className = 'scene-canvas';
+    container.prepend(this.canvas);
+
+    const aniso = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    for (let i = 0; i < TILE_COUNT; i++) this.tiles.push(new Tile(i, aniso));
+
+    this.buildBoard(coarse ? 1024 : 2048);
+    this.buildRack();
+    this.buildPool();
+    this.buildHints();
+
+    this.canvas.addEventListener('pointerdown', this.onDown);
+    this.canvas.addEventListener('pointermove', this.onMove);
+    this.canvas.addEventListener('pointerup', this.onUp);
+    this.canvas.addEventListener('pointercancel', this.onUp);
+    this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.ro = new ResizeObserver(() => this.resize());
+    this.ro.observe(container);
+    document.addEventListener('visibilitychange', this.onVis);
+    this.resize();
+    this.applyCam();
+    this.lastT = performance.now();
+    this.rafId = requestAnimationFrame(this.loop);
+  }
+
+  // ---------- construção ----------
+  private buildBoard(shadowSize: number): void {
+    const s = this.boardScene;
+    s.background = new THREE.Color(0x0b1410);
+    const feltW = BOARD_W + 9;
+    const feltD = BOARD_D + 8;
+    const felt = new THREE.Mesh(new THREE.PlaneGeometry(feltW, feltD), new THREE.MeshStandardMaterial({ map: feltTexture(), roughness: 1, metalness: 0 }));
+    felt.rotation.x = -Math.PI / 2;
+    felt.receiveShadow = true;
+    s.add(felt);
+
+    // moldura de madeira
+    const wood = new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.55, metalness: 0.05 });
+    const fw = 2.2;
+    const frame = (w: number, d: number, x: number, z: number): void => {
+      const m = new THREE.Mesh(new RoundedBoxGeometry(w, 1.1, d, 3, 0.25), wood);
+      m.position.set(x, 0.1, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      s.add(m);
+    };
+    frame(feltW + fw * 2, fw, 0, -(feltD / 2 + fw / 2) + 0.3);
+    frame(feltW + fw * 2, fw, 0, feltD / 2 + fw / 2 - 0.3);
+    frame(fw, feltD + 0.6, -(feltW / 2 + fw / 2) + 0.3, 0);
+    frame(fw, feltD + 0.6, feltW / 2 + fw / 2 - 0.3, 0);
+
+    // área de jogo (borda tênue)
+    const cv = document.createElement('canvas');
+    cv.width = 512;
+    cv.height = 256;
+    const c = cv.getContext('2d')!;
+    c.strokeStyle = 'rgba(255,255,255,0.22)';
+    c.lineWidth = 3;
+    c.setLineDash([14, 10]);
+    c.strokeRect(4, 4, 504, 248);
+    const t = new THREE.CanvasTexture(cv);
+    t.colorSpace = THREE.SRGBColorSpace;
+    const area = new THREE.Mesh(new THREE.PlaneGeometry(BOARD_W + 0.4, BOARD_D + 0.4), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+    area.rotation.x = -Math.PI / 2;
+    area.position.y = 0.01;
+    s.add(area);
+
+    s.add(new THREE.HemisphereLight(0xfff1dc, 0x16261d, 0.9));
+    const sun = new THREE.DirectionalLight(0xfff0d6, 1.5);
+    sun.position.set(-14, 28, 12);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(shadowSize, shadowSize);
+    const sc = sun.shadow.camera;
+    sc.left = -BOARD_W / 2 - 4;
+    sc.right = BOARD_W / 2 + 4;
+    sc.top = BOARD_D / 2 + 6;
+    sc.bottom = -BOARD_D / 2 - 6;
+    sc.near = 5;
+    sc.far = 80;
+    sun.shadow.bias = -0.0006;
+    sun.shadow.normalBias = 0.03;
+    s.add(sun);
+    const lamp = new THREE.PointLight(0xffd7a0, 70, 70, 1.6);
+    lamp.position.set(0, 18, 2);
+    s.add(lamp);
+
+    for (const t3 of this.tiles) s.add(t3.group);
+  }
+
+  private buildRack(): void {
+    const s = this.rackScene;
+    s.background = new THREE.Color(0x120d09);
+    this.rackTray = new THREE.Mesh(
+      new RoundedBoxGeometry(1, 0.5, 1, 3, 0.18),
+      new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.5, metalness: 0.05 }),
+    );
+    this.rackTray.position.y = -0.27;
+    this.rackTray.receiveShadow = true;
+    s.add(this.rackTray);
+    s.add(new THREE.HemisphereLight(0xfff1dc, 0x2a1a10, 1.0));
+    const d = new THREE.DirectionalLight(0xfff0d6, 1.7);
+    d.position.set(-6, 14, 8);
+    d.castShadow = true;
+    d.shadow.mapSize.set(1024, 1024);
+    d.shadow.camera.left = -12;
+    d.shadow.camera.right = 12;
+    d.shadow.camera.top = 8;
+    d.shadow.camera.bottom = -8;
+    d.shadow.camera.near = 2;
+    d.shadow.camera.far = 40;
+    d.shadow.bias = -0.0006;
+    s.add(d);
+    this.rackCam.position.set(0, 20, 0);
+    this.rackCam.up.set(0, 0, -1);
+    this.rackCam.lookAt(0, 0, 0);
+  }
+
+  private buildPool(): void {
+    const geo = new RoundedBoxGeometry(TILE_W, TILE_H, TILE_D, 3, 0.11);
+    const mat = new THREE.MeshPhysicalMaterial({ color: 0xe3d6b6, roughness: 0.5, clearcoat: 0.4 });
+    const spots: [number, number, number][] = [
+      [-1.2, -0.6, 0.2],
+      [0.3, 0.5, -0.3],
+      [1.4, -0.4, 0.5],
+      [-0.2, -1.5, 0.1],
+    ];
+    for (const [px, pz, rot] of spots) {
+      for (let k = 0; k < 5; k++) {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(px + (Math.random() - 0.5) * 0.12, TILE_H * (k + 0.5), pz + (Math.random() - 0.5) * 0.12);
+        m.rotation.y = rot + (Math.random() - 0.5) * 0.25;
+        m.castShadow = true;
+        m.receiveShadow = true;
+        m.userData.pool = true;
+        this.poolGroup.add(m);
+      }
+    }
+    this.poolGroup.position.set(BOARD_W / 2 - 3.2, 0, -BOARD_D / 2 - 2.3);
+    this.boardScene.add(this.poolGroup);
+  }
+
+  private buildHints(): void {
+    const glow = (color: number, o: number): THREE.MeshBasicMaterial => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: o, depthWrite: false });
+    this.hintBoardCell = new THREE.Mesh(new THREE.PlaneGeometry(TILE_W, TILE_D), glow(0xffe28a, 0.35));
+    this.hintBoardCell.rotation.x = -Math.PI / 2;
+    this.hintBoardCell.position.y = 0.03;
+    this.hintBoardBar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, TILE_D + 0.2), glow(0xffe28a, 0.9));
+    this.hintRackBar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, TILE_D + 0.2), glow(0xffe28a, 0.9));
+    for (const h of [this.hintBoardCell, this.hintBoardBar, this.hintRackBar]) h.visible = false;
+    this.boardScene.add(this.hintBoardCell, this.hintBoardBar);
+    this.rackScene.add(this.hintRackBar);
+  }
+
+  // ---------- coordenadas ----------
+  private boardPos(sx: number, i: number, sz: number, y = 0): THREE.Vector3 {
+    return new THREE.Vector3((sx + i + 0.5) * CELL_W - BOARD_W / 2, y, (sz + 0.5) * CELL_D - BOARD_D / 2);
+  }
+
+  private rackPos(i: number): THREE.Vector3 {
+    const col = i % this.cols;
+    const row = Math.floor(i / this.cols);
+    return new THREE.Vector3((col - (this.cols - 1) / 2) * CELL_W, 0, (row - (this.rows - 1) / 2) * CELL_D);
+  }
+
+  private rackIndexAt(x: number, z: number, count: number): number {
+    const col = Math.max(0, Math.min(this.cols - 1, Math.round(x / CELL_W + (this.cols - 1) / 2)));
+    const row = Math.max(0, Math.min(this.rows - 1, Math.round(z / CELL_D + (this.rows - 1) / 2)));
+    return Math.min(row * this.cols + col, count);
+  }
+
+  private regionAt(y: number): Region {
+    return y >= this.H - this.rackH ? 'rack' : 'board';
+  }
+
+  private ndc(region: Region, x: number, y: number): THREE.Vector2 {
+    if (region === 'rack') return new THREE.Vector2((x / this.W) * 2 - 1, -(((y - (this.H - this.rackH)) / this.rackH) * 2 - 1));
+    return new THREE.Vector2((x / this.W) * 2 - 1, -((y / (this.H - this.rackH)) * 2 - 1));
+  }
+
+  private ground(region: Region, x: number, y: number): THREE.Vector3 | null {
+    this.raycaster.setFromCamera(this.ndc(region, x, y), region === 'rack' ? this.rackCam : this.boardCam);
+    const p = new THREE.Vector3();
+    return this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p) ? p : null;
+  }
+
+  private pickTile(region: Region, x: number, y: number): number | null {
+    this.raycaster.setFromCamera(this.ndc(region, x, y), region === 'rack' ? this.rackCam : this.boardCam);
+    const bodies: THREE.Object3D[] = [];
+    for (const t of this.tiles) if (t.present && this.tileScene[t.id] === region) bodies.push(t.body);
+    const hit = this.raycaster.intersectObjects(bodies, false)[0];
+    return hit ? (hit.object.userData.tileId as number) : null;
+  }
+
+  private pickPool(x: number, y: number): boolean {
+    if (this.state.poolCount <= 0) return false;
+    this.raycaster.setFromCamera(this.ndc('board', x, y), this.boardCam);
+    return this.raycaster.intersectObjects(this.poolGroup.children, false).length > 0;
+  }
+
+  // ---------- estado ----------
+  setState(s: SceneState): void {
+    this.state = s;
+    this.poolGroup.visible = s.poolCount > 0;
+    this.layoutRack(s.rack.length);
+    this.syncTiles();
+    if (!this.fitted && s.table.length > 0) this.fit();
+    this.dirty = true;
+  }
+
+  private layoutRack(n: number): void {
+    const W = this.W;
+    const H = this.H;
+    let cols = Math.max(7, Math.min(16, Math.floor(W / (CELL_W * 40))));
+    const need = (c: number): { rows: number; h: number } => {
+      const rows = Math.max(1, Math.ceil(Math.max(n, 1) / c));
+      const u = W / (c * CELL_W + 0.9);
+      return { rows, h: rows * CELL_D * u + 0.9 * u };
+    };
+    while (cols < 16 && need(cols).h > H * 0.4) cols++;
+    const { rows, h } = need(cols);
+    this.cols = cols;
+    this.rows = rows;
+    const nextH = Math.max(H * 0.17, Math.min(H * 0.42, h));
+    if (Math.abs(nextH - this.rackH) > 0.5) {
+      this.rackH = nextH;
+      this.updateCams();
+    }
+    const cw = cols * CELL_W + 0.9;
+    const ch = rows * CELL_D + 0.9;
+    this.rackTray.scale.set(cw, 1, ch);
+    const aspect = W / this.rackH;
+    const halfH = Math.max(ch / 2, cw / 2 / aspect);
+    const halfW = halfH * aspect;
+    this.rackCam.left = -halfW;
+    this.rackCam.right = halfW;
+    this.rackCam.top = halfH;
+    this.rackCam.bottom = -halfH;
+    this.rackCam.updateProjectionMatrix();
+  }
+
+  private syncTiles(): void {
+    const s = this.state;
+    const where = new Map<number, { set: SetState; index: number }>();
+    for (const set of s.table) set.tiles.forEach((id, index) => where.set(id, { set, index }));
+    const rackIdx = new Map<number, number>();
+    s.rack.forEach((id, i) => rackIdx.set(id, i));
+    const dragId = this.it && this.it.type === 'tile' && this.it.active ? this.it.id : -1;
+    const setDrag = this.it && this.it.type === 'set' && this.it.active ? this.it : null;
+
+    for (const t of this.tiles) {
+      let region: Region | null = null;
+      const ri = rackIdx.get(t.id);
+      const w = where.get(t.id);
+      if (ri !== undefined) {
+        region = 'rack';
+        t.target.copy(this.rackPos(ri));
+        t.targetRotY = 0;
+      } else if (w) {
+        region = 'board';
+        const lift = setDrag && setDrag.setId === w.set.id ? 0.5 : 0;
+        const p = this.boardPos(w.set.x + (setDrag && setDrag.setId === w.set.id ? setDrag.dx : 0), w.index, w.set.z + (setDrag && setDrag.setId === w.set.id ? setDrag.dz : 0), lift);
+        t.target.copy(p);
+        t.targetRotY = 0;
+      }
+      if (t.id === dragId) continue;
+      if (!region) {
+        t.present = false;
+        t.group.visible = false;
+        this.tileScene[t.id] = null;
+        continue;
+      }
+      const prev = this.tileScene[t.id];
+      if (!t.present || prev !== region) {
+        (region === 'board' ? this.boardScene : this.rackScene).add(t.group);
+        t.group.visible = true;
+        t.group.position.copy(t.target);
+        if (!t.present && region === 'board') t.group.position.y += 5;
+        if (region === 'rack') t.group.scale.setScalar(0.35);
+        else t.group.scale.setScalar(1);
+        t.present = true;
+        this.tileScene[t.id] = region;
+      }
+      t.dragging = false;
+      // cores de estado do conjunto
+      let tint = 0;
+      let k = 0;
+      if (region === 'board' && w) {
+        const valid = s.valid.get(w.set.id);
+        const mine = s.placed.has(t.id);
+        if (valid === false && w.set.tiles.length >= 3) {
+          tint = 0xff3b2a;
+          k = 0.32;
+        } else if (valid === false && w.set.tiles.some((x) => s.placed.has(x))) {
+          tint = 0xffb02a;
+          k = 0.26;
+        } else if (mine) {
+          tint = 0x3ad0ff;
+          k = 0.2;
+        }
+      }
+      t.setTint(tint, k);
+    }
+  }
+
+  fit(): void {
+    const sets = this.state.table;
+    let minX = -5.5;
+    let maxX = 5.5;
+    let minZ = -2.5;
+    let maxZ = 2.5;
+    if (sets.length > 0) {
+      minX = Infinity;
+      maxX = -Infinity;
+      minZ = Infinity;
+      maxZ = -Infinity;
+      for (const s of sets) {
+        const a = this.boardPos(s.x, 0, s.z);
+        const b = this.boardPos(s.x, s.tiles.length - 1, s.z);
+        minX = Math.min(minX, a.x - 1);
+        maxX = Math.max(maxX, b.x + 1);
+        minZ = Math.min(minZ, a.z - 1.2);
+        maxZ = Math.max(maxZ, a.z + 1.2);
+      }
+      this.fitted = true;
+    }
+    const w = Math.max(maxX - minX, 11) + 1.5;
+    const h = Math.max(maxZ - minZ, 5) + 1.5;
+    const aspect = this.W / Math.max(1, this.H - this.rackH);
+    const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+    this.cam.tx = (minX + maxX) / 2;
+    this.cam.tz = (minZ + maxZ) / 2;
+    this.cam.dist = Math.max(w / 2 / (t * aspect), h / 2 / (t * Math.sin(ELEV)));
+    this.clampCam();
+    this.applyCam();
+  }
+
+  private clampCam(): void {
+    this.cam.tx = Math.max(-BOARD_W / 2, Math.min(BOARD_W / 2, this.cam.tx));
+    this.cam.tz = Math.max(-BOARD_D / 2 - 3, Math.min(BOARD_D / 2, this.cam.tz));
+    this.cam.dist = Math.max(8, Math.min(75, this.cam.dist));
+  }
+
+  private applyCam(): void {
+    const { tx, tz, dist } = this.cam;
+    this.boardCam.position.set(tx, Math.sin(ELEV) * dist, tz + Math.cos(ELEV) * dist);
+    this.boardCam.lookAt(tx, 0, tz);
+    this.boardCam.updateMatrixWorld();
+    this.dirty = true;
+  }
+
+  private updateCams(): void {
+    this.boardCam.aspect = this.W / Math.max(1, this.H - this.rackH);
+    this.boardCam.updateProjectionMatrix();
+  }
+
+  private resize(): void {
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (w < 2 || h < 2) return;
+    this.W = w;
+    this.H = h;
+    this.renderer.setSize(w, h, false);
+    this.canvas.style.width = '100%';
+    this.canvas.style.height = '100%';
+    this.layoutRack(this.state.rack.length);
+    this.updateCams();
+    this.syncTiles();
+    this.dirty = true;
+  }
+
+  /** Altura (px) ocupada pelo cavalete, para a interface posicionar a barra de ações acima dele. */
+  get rackHeight(): number {
+    return this.rackH;
+  }
+
+  // ---------- interação ----------
+  private rel(e: PointerEvent | WheelEvent): { x: number; y: number } {
+    const r = this.canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  private onDown = (e: PointerEvent): void => {
+    this.canvas.setPointerCapture(e.pointerId);
+    const p = this.rel(e);
+    this.pointers.set(e.pointerId, p);
+    if (this.pointers.size === 2) {
+      this.cancelActive();
+      const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }];
+      this.it = { type: 'pinch', startDist: Math.hypot(a.x - b.x, a.y - b.y) || 1, startCam: this.cam.dist };
+      return;
+    }
+    if (this.pointers.size > 1) return;
+    const region = this.regionAt(p.y);
+    const id = this.pickTile(region, p.x, p.y);
+    if (id !== null) {
+      if (region === 'rack') {
+        this.it = { type: 'tile', id, startX: p.x, startY: p.y, active: false };
+        return;
+      }
+      if (!this.state.canEditBoard) {
+        this.startPan(p);
+        return;
+      }
+      const loc = this.locate(id);
+      if (this.state.mode === 'set' && loc) {
+        const g = this.ground('board', p.x, p.y);
+        this.it = { type: 'set', setId: loc.set.id, anchor: g ?? new THREE.Vector3(), startX: p.x, startY: p.y, active: false, dx: 0, dz: 0 };
+      } else if (this.state.mode === 'split' && loc) {
+        this.it = { type: 'split', setId: loc.set.id, index: loc.index, startX: p.x, startY: p.y };
+      } else {
+        this.it = { type: 'tile', id, startX: p.x, startY: p.y, active: false };
+      }
+      return;
+    }
+    if (region === 'board' && this.pickPool(p.x, p.y)) {
+      this.it = { type: 'pool', startX: p.x, startY: p.y };
+      return;
+    }
+    if (region === 'board') this.startPan(p);
+  };
+
+  private locate(id: number): { set: SetState; index: number } | null {
+    for (const set of this.state.table) {
+      const index = set.tiles.indexOf(id);
+      if (index >= 0) return { set, index };
+    }
+    return null;
+  }
+
+  private startPan(p: { x: number; y: number }): void {
+    const g = this.ground('board', p.x, p.y);
+    if (g) this.it = { type: 'pan', anchor: g };
+  }
+
+  private cancelActive(): void {
+    if (this.it && this.it.type === 'tile' && this.it.active) this.tiles[this.it.id]!.dragging = false;
+    this.it = null;
+    this.hideHints();
+    this.syncTiles();
+  }
+
+  private onMove = (e: PointerEvent): void => {
+    const p = this.rel(e);
+    if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, p);
+    const it = this.it;
+    if (!it) return;
+    if (it.type === 'pinch') {
+      if (this.pointers.size >= 2) {
+        const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }];
+        const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        this.cam.dist = it.startCam * (it.startDist / d);
+        this.clampCam();
+        this.applyCam();
+      }
+      return;
+    }
+    if (it.type === 'pan') {
+      const g = this.ground('board', p.x, p.y);
+      if (g) {
+        this.cam.tx += it.anchor.x - g.x;
+        this.cam.tz += it.anchor.z - g.z;
+        this.clampCam();
+        this.applyCam();
+      }
+      return;
+    }
+    if (it.type === 'pool' || it.type === 'split') {
+      if (Math.hypot(p.x - it.startX, p.y - it.startY) > DRAG_THRESHOLD * 2) this.startPan(p);
+      return;
+    }
+    if (it.type === 'set') {
+      if (!it.active && Math.hypot(p.x - it.startX, p.y - it.startY) > DRAG_THRESHOLD) it.active = true;
+      if (!it.active) return;
+      const g = this.ground('board', p.x, p.y);
+      if (!g) return;
+      it.dx = Math.round((g.x - it.anchor.x) / CELL_W);
+      it.dz = Math.round((g.z - it.anchor.z) / CELL_D);
+      this.syncTiles();
+      this.dirty = true;
+      return;
+    }
+    if (it.type === 'tile') {
+      if (!it.active) {
+        if (Math.hypot(p.x - it.startX, p.y - it.startY) <= DRAG_THRESHOLD) return;
+        it.active = true;
+        this.tiles[it.id]!.dragging = true;
+      }
+      this.dragTile(it.id, p);
+    }
+  };
+
+  private dragTile(id: number, p: { x: number; y: number }): void {
+    const t = this.tiles[id]!;
+    const region = this.regionAt(p.y);
+    const g = this.ground(region, p.x, p.y);
+    if (!g) return;
+    const scene = region === 'rack' ? this.rackScene : this.boardScene;
+    if (t.group.parent !== scene) {
+      scene.add(t.group);
+      t.group.scale.setScalar(1);
+    }
+    t.group.visible = true;
+    t.target.set(g.x, 0.9, g.z);
+    t.group.position.copy(t.target);
+    t.group.rotation.y = 0;
+    this.hideHints();
+    if (region === 'rack') {
+      const n = this.state.rack.length - (this.state.rack.includes(id) ? 1 : 0);
+      const idx = this.rackIndexAt(g.x, g.z, n);
+      const pos = this.rackPos(idx);
+      this.hintRackBar.position.set(pos.x - CELL_W / 2, 0.25, pos.z);
+      this.hintRackBar.visible = true;
+    } else if (this.state.canEditBoard) {
+      const cx = g.x / CELL_W + COLS / 2;
+      const cz = g.z / CELL_D + ROWS / 2;
+      const act = resolveBoardDrop(tableWithoutTile(this.state.table, id), cx, cz);
+      if (act.kind === 'insert') {
+        const set = tableWithoutTile(this.state.table, id).find((s) => s.id === act.setId)!;
+        const edge = this.boardPos(set.x, act.index, set.z);
+        this.hintBoardBar.position.set(edge.x - CELL_W / 2, 0.25, edge.z);
+        this.hintBoardBar.visible = true;
+      } else {
+        const c = this.boardPos(act.x, 0, act.z);
+        this.hintBoardCell.position.set(c.x, 0.03, c.z);
+        this.hintBoardCell.visible = true;
+      }
+    }
+    this.dirty = true;
+  }
+
+  private hideHints(): void {
+    this.hintBoardBar.visible = false;
+    this.hintBoardCell.visible = false;
+    this.hintRackBar.visible = false;
+  }
+
+  private onUp = (e: PointerEvent): void => {
+    const p = this.rel(e);
+    this.pointers.delete(e.pointerId);
+    const it = this.it;
+    if (it?.type === 'pinch') {
+      if (this.pointers.size < 2) this.it = null;
+      return;
+    }
+    this.it = null;
+    this.hideHints();
+    if (!it) return;
+    if (it.type === 'pool') {
+      if (Math.hypot(p.x - it.startX, p.y - it.startY) <= DRAG_THRESHOLD * 2) this.handlers.onPoolTap();
+    } else if (it.type === 'split') {
+      if (Math.hypot(p.x - it.startX, p.y - it.startY) <= DRAG_THRESHOLD * 2) this.handlers.onSplit(it.setId, it.index);
+    } else if (it.type === 'set') {
+      if (it.active && (it.dx !== 0 || it.dz !== 0)) this.handlers.onSetMove(it.setId, it.dx, it.dz);
+      this.syncTiles();
+    } else if (it.type === 'tile' && it.active) {
+      const t = this.tiles[it.id]!;
+      t.dragging = false;
+      const region = this.regionAt(p.y);
+      const g = this.ground(region, p.x, p.y);
+      if (g) {
+        if (region === 'rack') {
+          const n = this.state.rack.length - (this.state.rack.includes(it.id) ? 1 : 0);
+          this.handlers.onRackDrop(it.id, this.rackIndexAt(g.x, g.z, n));
+        } else if (this.state.canEditBoard) {
+          this.handlers.onBoardDrop(it.id, g.x / CELL_W + COLS / 2, g.z / CELL_D + ROWS / 2);
+        }
+      }
+      this.tileScene[it.id] = null; // força reposicionamento limpo
+      this.syncTiles();
+    }
+    this.dirty = true;
+  };
+
+  private onWheel = (e: WheelEvent): void => {
+    e.preventDefault();
+    const p = this.rel(e);
+    if (this.regionAt(p.y) !== 'board') return;
+    this.cam.dist *= Math.exp(e.deltaY * 0.0012);
+    this.clampCam();
+    this.applyCam();
+  };
+
+  // ---------- loop ----------
+  private onVis = (): void => {
+    this.lastT = performance.now();
+    this.dirty = true;
+  };
+
+  private loop = (now: number): void => {
+    if (this.disposed) return;
+    this.rafId = requestAnimationFrame(this.loop);
+    if (document.hidden) return;
+    const dt = Math.min(0.05, (now - this.lastT) / 1000);
+    this.lastT = now;
+    let moving = false;
+    for (const t of this.tiles) if (t.present && t.step(dt)) moving = true;
+    if (moving || this.dirty) {
+      this.idleFrames = 0;
+      this.dirty = false;
+    } else if (++this.idleFrames > 2) {
+      return;
+    }
+    this.draw();
+  };
+
+  private draw(): void {
+    const r = this.renderer;
+    const bh = this.H - this.rackH;
+    r.setViewport(0, this.rackH, this.W, bh);
+    r.setScissor(0, this.rackH, this.W, bh);
+    r.render(this.boardScene, this.boardCam);
+    r.setViewport(0, 0, this.W, this.rackH);
+    r.setScissor(0, 0, this.W, this.rackH);
+    r.render(this.rackScene, this.rackCam);
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    cancelAnimationFrame(this.rafId);
+    this.ro.disconnect();
+    document.removeEventListener('visibilitychange', this.onVis);
+    this.canvas.remove();
+    this.renderer.dispose();
+  }
+}

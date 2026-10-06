@@ -1,0 +1,3 @@
+# opcional: TURN do Cloudflare para vídeo/áudio atrás de NAT restritivo
+TURN_KEY_ID=
+TURN_API_TOKEN=
