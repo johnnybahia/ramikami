@@ -3,12 +3,12 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { COLS, ROWS, type SetState } from '../../shared/layout';
 import { TILE_COUNT } from '../../shared/tiles';
 import { setHighContrast } from './tiles3d';
-import { acceptingSets, newSetSpot, resolveBoardDrop, suggestDrop, tableWithoutTile } from './draft';
-import { CELL_D, CELL_W, TILE_D, TILE_H, TILE_W, Tile, woodTexture } from './tiles3d';
+import { acceptingSets, newSetSpot, resolveBoardDrop, tableWithoutTile } from './draft';
+import { CELL_D, CELL_W, ROW_D, TILE_D, TILE_H, TILE_W, Tile, woodTexture } from './tiles3d';
 import { onSkinChange, skinById, skinTexture, type SkinId } from './skins';
 
 export const BOARD_W = COLS * CELL_W;
-export const BOARD_D = ROWS * CELL_D;
+export const BOARD_D = ROWS * ROW_D;
 
 export type Mode = 'tile' | 'set' | 'split' | 'pick';
 type Region = 'board' | 'rack';
@@ -86,7 +86,7 @@ export class TableScene {
   private rackTray!: THREE.Mesh;
   private hintBoardCell!: THREE.Mesh;
   /** vaga guia: onde o próximo conjunto novo deve ir para a mesa ficar compacta */
-  private hintGuide!: THREE.Mesh;
+  private hintGuide!: THREE.Group;
   private hintBoardBar!: THREE.Mesh;
   private hintRackBar!: THREE.Mesh;
   private ro: ResizeObserver;
@@ -261,8 +261,16 @@ export class TableScene {
     this.hintBoardCell = new THREE.Mesh(new THREE.PlaneGeometry(TILE_W, TILE_D), glow(0xffe28a, 0.35));
     this.hintBoardCell.rotation.x = -Math.PI / 2;
     this.hintBoardCell.position.y = 0.03;
-    this.hintGuide = new THREE.Mesh(new THREE.PlaneGeometry(TILE_W + 0.3, TILE_D + 0.3), glow(0x7fe6ff, 0.42));
-    this.hintGuide.rotation.x = -Math.PI / 2;
+    // vaga guia: 3 casas (o menor conjunto), com contorno, no lugar sugerido para uma nova linha
+    this.hintGuide = new THREE.Group();
+    const gw = CELL_W * 3 - 0.1;
+    const gd = TILE_D + 0.34;
+    const gfill = new THREE.Mesh(new THREE.PlaneGeometry(gw, gd), glow(0x7fe6ff, 0.3));
+    gfill.rotation.x = -Math.PI / 2;
+    const gedge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(gw, gd)), new THREE.LineBasicMaterial({ color: 0xc8f7ff }));
+    gedge.rotation.x = -Math.PI / 2;
+    gedge.position.y = 0.01;
+    this.hintGuide.add(gfill, gedge);
     this.hintGuide.position.y = 0.035;
     this.hintBoardBar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, TILE_D + 0.2), glow(0xffe28a, 0.9));
     this.hintRackBar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, TILE_D + 0.2), glow(0xffe28a, 0.9));
@@ -273,7 +281,7 @@ export class TableScene {
 
   // ---------- coordenadas ----------
   private boardPos(sx: number, i: number, sz: number, y = 0): THREE.Vector3 {
-    return new THREE.Vector3((sx + i + 0.5) * CELL_W - BOARD_W / 2, y, (sz + 0.5) * CELL_D - BOARD_D / 2);
+    return new THREE.Vector3((sx + i + 0.5) * CELL_W - BOARD_W / 2, y, (sz + 0.5) * ROW_D - BOARD_D / 2);
   }
 
   private rackPos(i: number): THREE.Vector3 {
@@ -766,7 +774,7 @@ export class TableScene {
       const g = this.ground('board', p.x, p.y);
       if (!g) return;
       it.dx = Math.round((g.x - it.anchor.x) / CELL_W);
-      it.dz = Math.round((g.z - it.anchor.z) / CELL_D);
+      it.dz = Math.round((g.z - it.anchor.z) / ROW_D);
       this.syncTiles();
       this.dirty = true;
       return;
@@ -806,14 +814,13 @@ export class TableScene {
       this.hintRackBar.visible = true;
     } else if (this.state.canEditBoard) {
       const cx = g.x / CELL_W + COLS / 2;
-      const cz = g.z / CELL_D + ROWS / 2;
+      const cz = g.z / ROW_D + ROWS / 2;
       if (this.hintFor !== id) {
         this.hintFor = id;
         this.hintSets = new Set(acceptingSets(this.state.table, id).map((a) => a.setId));
         this.syncTiles();
       }
-      let act = resolveBoardDrop(tableWithoutTile(this.state.table, id), cx, cz);
-      if (act.kind === 'new') act = suggestDrop(this.state.table, id, cx, cz) ?? act;
+      const act = resolveBoardDrop(tableWithoutTile(this.state.table, id), cx, cz);
       if (act.kind === 'insert') {
         const set = tableWithoutTile(this.state.table, id).find((s) => s.id === act.setId)!;
         const edge = this.boardPos(set.x, act.index, set.z);
@@ -825,8 +832,8 @@ export class TableScene {
         const c = this.boardPos(sp.x, 0, sp.z);
         this.hintBoardCell.position.set(c.x, 0.03, c.z);
         this.hintBoardCell.visible = true;
-        if (sp.guide && (sp.guide.x !== sp.x || sp.guide.z !== sp.z)) {
-          const g = this.boardPos(sp.guide.x, 0, sp.guide.z);
+        if (sp.guide) {
+          const g = this.boardPos(sp.guide.x, 1, sp.guide.z); // centro das 3 casas
           this.hintGuide.position.set(g.x, 0.035, g.z);
           this.hintGuide.visible = true;
         }
@@ -892,7 +899,7 @@ export class TableScene {
           const n = this.state.rack.length - (this.state.rack.includes(it.id) ? 1 : 0);
           this.handlers.onRackDrop(it.id, this.rackIndexAt(g.x, g.z, n));
         } else if (this.state.canEditBoard) {
-          this.handlers.onBoardDrop(it.id, g.x / CELL_W + COLS / 2, g.z / CELL_D + ROWS / 2);
+          this.handlers.onBoardDrop(it.id, g.x / CELL_W + COLS / 2, g.z / ROW_D + ROWS / 2);
         }
       }
       this.tileScene[it.id] = null; // força reposicionamento limpo

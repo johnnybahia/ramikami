@@ -7,6 +7,8 @@ export const TILE_D = 1.4;
 export const TILE_H = 0.34;
 export const CELL_W = 1.1;
 export const CELL_D = 1.55;
+/** distância entre as fileiras da MESA (mais folgada que no cavalete, para as linhas ficarem bem separadas) */
+export const ROW_D = 1.95;
 
 export const TILE_COLORS = ['#17171c', '#0f52d6', '#d3202b', '#ee8700'];
 /** alto contraste: quatro cores bem separadas (e cada uma tem um símbolo próprio) */

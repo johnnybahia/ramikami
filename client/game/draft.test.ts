@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { findGuideSpot } from '../../shared/layout';
 import { dropNew, dropOnSet, dropToRack, draftStatus, newDraft, resolveBoardDrop, splitSet, tidyTable, acceptingSets, suggestDrop, newSetSpot } from './draft';
 
 const T = (color: number, num: number) => color * 13 + (num - 1);
@@ -63,13 +64,13 @@ describe('ajuda de encaixe', () => {
 });
 
 describe('lugar guia para pedras soltas', () => {
-  it('perto do lugar guia encaixa nele; longe fica onde foi solta', () => {
+  it('colado no lugar guia usa a vaga; longe fica exatamente onde foi solta', () => {
     const table = [{ id: 1, tiles: [0, 1, 2], x: 15, z: 6 }];
-    const near = newSetSpot(table, 99, 13.2, 6.5);
-    expect(near.guide).not.toBeNull();
-    expect(near.x).toBe(near.guide!.x);
+    const guide = findGuideSpot(table, 3, 4.5)!;
+    const near = newSetSpot(table, 99, guide.x + 0.9, guide.z + 0.5);
+    expect(near.guide).toEqual(guide);
+    expect([near.x, near.z]).toEqual([guide.x, guide.z]);
     const far = newSetSpot(table, 99, 2.4, 1.4);
-    expect(far.x).toBe(2);
-    expect(far.z).toBe(1);
+    expect([far.x, far.z]).toEqual([2, 1]);
   });
 });

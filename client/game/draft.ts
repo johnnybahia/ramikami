@@ -1,6 +1,6 @@
 // Rascunho do turno: o jogador mexe na mesa e no cavalete livremente; só vale ao confirmar.
 import { analyzeSet, validatePlay, MELD_MIN, type PlayCheck } from '../../shared/rules';
-import { COLS, ROWS, findCompactSpot, findSpot, fits, relayout, type SetState } from '../../shared/layout';
+import { COLS, ROWS, findCompactSpot, findGuideSpot, findSpot, fits, relayout, type SetState } from '../../shared/layout';
 import { isJoker, tileColor, tileNum } from '../../shared/tiles';
 
 export interface Draft {
@@ -166,12 +166,12 @@ export function suggestDrop(table: readonly SetState[], id: number, cx: number, 
 }
 
 /**
- * Onde cai uma pedra solta fora de qualquer conjunto: se estiver perto do "lugar guia" (próxima vaga compacta
- * perto do centro), encaixa nele; senão fica onde foi solta.
+ * Onde cai uma pedra solta fora de qualquer conjunto: se for solta colada no "lugar guia" (próxima vaga compacta
+ * perto do centro), usa a vaga; senão fica exatamente onde o jogador soltou (ele cria o próprio conjunto onde quiser).
  */
 export function newSetSpot(table: readonly SetState[], id: number, x: number, z: number): { x: number; z: number; guide: { x: number; z: number } | null } {
-  const guide = findCompactSpot(tableWithoutTile(table, id), 1);
-  if (guide && Math.abs(guide.x + 0.5 - x) <= 4 && Math.abs(guide.z + 0.5 - z) <= 1.6) return { x: guide.x, z: guide.z, guide };
+  const guide = findGuideSpot(tableWithoutTile(table, id), 3, z);
+  if (guide && Math.abs(guide.x + 0.5 - x) <= 1.6 && Math.abs(guide.z + 0.5 - z) <= 0.9) return { x: guide.x, z: guide.z, guide };
   return { x: Math.max(0, Math.min(COLS - 1, Math.floor(x))), z: Math.max(0, Math.min(ROWS - 1, Math.floor(z))), guide };
 }
 
