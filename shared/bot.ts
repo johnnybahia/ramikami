@@ -1,6 +1,6 @@
 import { isJoker, tileValue } from './tiles';
 import { analyzeSet, validatePlay } from './rules';
-import { COLS, ROWS, findSpot, relayout, type SetState } from './layout';
+import { findCompactSpot, relayout, type SetState } from './layout';
 import type { GameState } from './game';
 import { key, packCounts, type Cand } from './pack';
 import { solveTable } from './solver';
@@ -217,7 +217,7 @@ export function botMove(state: GameState, persona: LevelCfg = LEVEL_CFG.master, 
     const r = realize(me.rack, chosen);
     rest = r.rest;
     for (const tiles of r.sets) {
-      const spot = findSpot(table, -1, Math.floor((COLS - tiles.length) / 2), Math.floor(ROWS / 2), tiles.length);
+      const spot = findCompactSpot(table, tiles.length);
       if (!spot) {
         ok = false;
         break;

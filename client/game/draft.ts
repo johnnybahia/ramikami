@@ -1,6 +1,6 @@
 // Rascunho do turno: o jogador mexe na mesa e no cavalete livremente; só vale ao confirmar.
 import { analyzeSet, validatePlay, MELD_MIN, type PlayCheck } from '../../shared/rules';
-import { COLS, ROWS, findSpot, fits, relayout, type SetState } from '../../shared/layout';
+import { COLS, ROWS, findCompactSpot, findSpot, fits, relayout, type SetState } from '../../shared/layout';
 import { isJoker, tileColor, tileNum } from '../../shared/tiles';
 
 export interface Draft {
@@ -104,7 +104,7 @@ export function placeSets(d: Draft, sets: readonly (readonly number[])[]): Draft
   for (const tiles of sets) {
     if (!tiles.every((t) => inRack(n, t))) return null;
     for (const t of tiles) detach(n, t);
-    const spot = findSpot(n.table, -1, 0, 0, tiles.length);
+    const spot = findCompactSpot(n.table, tiles.length);
     if (!spot) return null;
     n.table.push({ id: nextId(n), tiles: tiles.slice(), x: spot.x, z: spot.z });
     for (const t of tiles) n.placed.add(t);

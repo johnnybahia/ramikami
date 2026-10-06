@@ -1,7 +1,7 @@
 // Rearranjo da mesa: reparte as pedras da mesa + cavalete em conjuntos válidos cobrindo TODA a mesa e
 // colocando o máximo de pontos do cavalete. Busca exata com limite de nós (CPU do Worker é curta).
 import { isJoker, JOKER_POINTS } from './tiles';
-import { COLS, ROWS, findSpot, type SetState } from './layout';
+import { findCompactSpot, type SetState } from './layout';
 import { key, packCounts } from './pack';
 
 interface Step {
@@ -289,7 +289,7 @@ export function solveTable(fullTable: readonly SetState[], rack: readonly number
     else fresh.push(tiles);
   }
   for (const tiles of fresh) {
-    const spot = findSpot(out, -1, Math.floor((COLS - tiles.length) / 2), Math.floor(ROWS / 2), tiles.length);
+    const spot = findCompactSpot(out, tiles.length);
     if (!spot) return null;
     out.push({ id: out.length + 1, tiles, x: spot.x, z: spot.z });
   }
