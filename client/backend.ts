@@ -24,6 +24,7 @@ export interface Backend {
   start(): void;
   seat(id: string, seat: number): void;
   settings(opts: { turnSeconds?: TurnSeconds; bestOf?: BestOf }): void;
+  shuffle(): void;
   next(): void;
   more(): void;
   confirm(yes: boolean): void;

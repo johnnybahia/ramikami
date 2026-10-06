@@ -65,6 +65,8 @@ export interface RoomView {
   hostId: string;
   turnSeconds: TurnSeconds;
   bestOf: BestOf;
+  /** o anfitrião definiu a ordem das jogadas à mão (senão ela é sorteada a cada entrada) */
+  orderLocked: boolean;
   series?: SeriesView;
   isPublic: boolean;
   you: string;
@@ -84,6 +86,7 @@ export type ClientMsg =
   | { t: 'start' }
   | { t: 'seat'; id: string; seat: number }
   | { t: 'settings'; turnSeconds?: TurnSeconds; bestOf?: BestOf }
+  | { t: 'shuffle' }
   | { t: 'next' }
   | { t: 'more' }
   | { t: 'confirm'; yes: boolean }

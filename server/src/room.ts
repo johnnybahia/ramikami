@@ -8,7 +8,6 @@ import {
   CONFIRM_SECONDS,
   MAX_ROOM_PLAYERS,
   NAME_MAX,
-  SEAT_PREFERENCE,
   TURN_SECONDS_OPTIONS,
   type ClientMsg,
   type RoomPlayer,
@@ -33,6 +32,8 @@ interface Stored {
   hostId: string;
   turnSeconds: TurnSeconds;
   bestOf: BestOf;
+  /** true depois que o anfitrião mexe na ordem: para de sortear a cada entrada */
+  orderLocked: boolean;
   series: Series | null;
   isPublic: boolean;
   phase: 'lobby' | 'playing' | 'ended';
@@ -86,6 +87,7 @@ export class GameRoom implements DurableObject {
         this.s.bots ??= {};
         this.s.away ??= {};
         this.s.bestOf ??= 3;
+        this.s.orderLocked ??= false;
         this.s.series ??= null;
       }
       this.photos = (await ctx.storage.get<Record<string, string>>('photos')) ?? {};
@@ -148,6 +150,7 @@ export class GameRoom implements DurableObject {
       hostId: s.hostId,
       turnSeconds: s.turnSeconds,
       bestOf: s.bestOf,
+      orderLocked: s.orderLocked,
       series: this.seriesView(),
       isPublic: s.isPublic,
       you: forId,
@@ -161,6 +164,26 @@ export class GameRoom implements DurableObject {
       serverNow: Date.now(),
       result: g?.result,
     };
+  }
+
+  /** Ordem das jogadas no saguão: sorteada a cada entrada, até o anfitrião mexer. */
+  private assignSeats(): void {
+    const s = this.s!;
+    const ids = s.lobby.map((p) => p.id);
+    if (s.orderLocked) {
+      for (const id of ids) {
+        if (id in s.seats) continue;
+        const used = new Set(Object.values(s.seats));
+        s.seats[id] = [0, 1, 2, 3].find((x) => !used.has(x)) ?? 0;
+      }
+      return;
+    }
+    for (let i = ids.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [ids[i], ids[j]] = [ids[j]!, ids[i]!];
+    }
+    s.seats = {};
+    ids.forEach((id, i) => (s.seats[id] = i));
   }
 
   private seriesView(): SeriesView | undefined {
@@ -220,7 +243,7 @@ export class GameRoom implements DurableObject {
       if (this.s) return new Response('exists', { status: 409 });
       const body = (await req.json()) as { code: string; turnSeconds: number; isPublic: boolean };
       const turnSeconds = (TURN_SECONDS_OPTIONS as readonly number[]).includes(body.turnSeconds) ? (body.turnSeconds as TurnSeconds) : 60;
-      this.s = { code: body.code, hostId: '', turnSeconds, bestOf: 3, series: null, isPublic: !!body.isPublic, phase: 'lobby', lobby: [], seats: {}, bots: {}, away: {}, botAt: null, media: {}, game: null, turnEndsAt: null, recorded: false };
+      this.s = { code: body.code, hostId: '', turnSeconds, bestOf: 3, orderLocked: false, series: null, isPublic: !!body.isPublic, phase: 'lobby', lobby: [], seats: {}, bots: {}, away: {}, botAt: null, media: {}, game: null, turnEndsAt: null, recorded: false };
       await this.persist();
       await this.ctx.storage.setAlarm(Date.now() + IDLE_ROOM_MS);
       return new Response('ok');
@@ -326,12 +349,19 @@ export class GameRoom implements DurableObject {
         for (const persona of pickBots(msg.level, count)) {
           s.lobby.push({ id: persona.id, name: persona.name });
           s.bots[persona.id] = persona.level;
-          const used = new Set(Object.values(s.seats));
-          s.seats[persona.id] = SEAT_PREFERENCE.find((x) => !used.has(x)) ?? 0;
         }
+        this.assignSeats();
         await this.persist();
         this.broadcast();
         await this.listing();
+        return;
+      }
+      case 'shuffle': {
+        if (me !== s.hostId || s.phase !== 'lobby') return;
+        s.orderLocked = false;
+        this.assignSeats();
+        await this.persist();
+        this.broadcast();
         return;
       }
       case 'seat': {
@@ -341,6 +371,7 @@ export class GameRoom implements DurableObject {
         const other = Object.keys(s.seats).find((id) => id !== msg.id && s.seats[id] === seat);
         if (other) s.seats[other] = s.seats[msg.id]!;
         s.seats[msg.id] = seat;
+        s.orderLocked = true;
         await this.persist();
         this.broadcast();
         return;
@@ -448,8 +479,7 @@ export class GameRoom implements DurableObject {
           return void ws.close(4003, 'full');
         }
         s.lobby.push({ id, name });
-        const used = new Set(Object.values(s.seats));
-        s.seats[id] = SEAT_PREFERENCE.find((x) => !used.has(x)) ?? 0;
+        this.assignSeats();
         if (!s.hostId) s.hostId = id;
       } else {
         inLobby.name = name;

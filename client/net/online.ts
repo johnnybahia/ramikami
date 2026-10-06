@@ -111,6 +111,9 @@ export class OnlineBackend implements Backend {
   settings(opts: { turnSeconds?: TurnSeconds; bestOf?: BestOf }): void {
     this.send({ t: 'settings', ...opts });
   }
+  shuffle(): void {
+    this.send({ t: 'shuffle' });
+  }
   next(): void {
     this.send({ t: 'next' });
   }

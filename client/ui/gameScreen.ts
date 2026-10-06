@@ -59,7 +59,8 @@ export class GameScreen {
   private root = h('div', { class: 'game' });
   private stage = h('div', { class: 'stage' });
   private topbar = h('div', { class: 'topbar' });
-  private boxLayer = h('div', { class: 'boxes' });
+  private boxLayer = h('div', { class: 'playerbar' });
+  private head = h('div', { class: 'head' });
   private actionbar = h('div', { class: 'actionbar' });
   private overlay = h('div', { class: 'overlay-host' });
   private scene: TableScene;
@@ -87,7 +88,6 @@ export class GameScreen {
   private pwa: PwaState | null = null;
   private offPwa: () => void;
   private seatsOpen = false;
-  private seatPick: string | null = null;
   private seatModal: HTMLElement | null = null;
   private b: Backend;
   private timerPill = h('div', { class: 'pill timer', text: '' });
@@ -105,7 +105,8 @@ export class GameScreen {
   constructor(private o: GameScreenOpts) {
     this.b = o.backend;
     document.body.append(this.root);
-    this.root.append(this.stage, this.boxLayer, this.topbar, this.actionbar, this.overlay, this.connEl);
+    this.head.append(this.topbar, this.boxLayer);
+    this.root.append(this.stage, this.head, this.actionbar, this.overlay, this.connEl);
     this.scene = new TableScene(this.stage, {
       onRackDrop: (id, i) => this.onRackDrop(id, i),
       onBoardDrop: (id, cx, cz) => this.onBoardDrop(id, cx, cz),
@@ -405,6 +406,7 @@ export class GameScreen {
     this.actionbar.style.bottom = `${rh}px`;
     this.root.style.setProperty('--rack-h', `${rh}px`);
     this.root.style.setProperty('--bar-h', `${this.actionbar.offsetHeight}px`);
+    this.root.style.setProperty('--head-h', `${this.head.offsetHeight}px`);
   }
 
   private buildTopbar(): void {
@@ -544,18 +546,17 @@ export class GameScreen {
   private renderBoxes(): void {
     const v = this.view;
     if (!v) return;
-    const me = this.me();
-    const mySeat = me?.seat ?? 0;
     const meId = v.you;
     const isHost = v.hostId === meId;
     const live = this.b.mode === 'online';
     const seen = new Set<string>();
-    for (const p of v.players) {
-      if (p.left) continue;
+    // na sequência em que o jogo rola (ordem dos assentos)
+    const ordered = v.players.filter((p) => !p.left).sort((a, b) => a.seat - b.seat);
+    for (const p of ordered) {
       seen.add(p.id);
       const box = this.ensureBox(p);
-      const rel = (p.seat - mySeat + 4) % 4;
-      box.el.className = `pbox pos-${rel}${v.turnId === p.id ? ' turn' : ''}${p.connected ? '' : ' offline'}${p.id === meId ? ' me' : ''}`;
+      this.boxLayer.append(box.el);
+      box.el.className = `pbox${v.turnId === p.id ? ' turn' : ''}${p.connected ? '' : ' offline'}${p.id === meId ? ' me' : ''}`;
       box.name.textContent = `${p.isHost ? '♛ ' : ''}${p.name}`;
       box.meta.textContent = v.phase === 'lobby' ? (p.connected ? '' : 'offline') : `${p.rackCount} pedras${p.melded ? ' · abriu' : ''}`;
       const bp = personaOfBotId(p.id);
@@ -594,6 +595,7 @@ export class GameScreen {
       }
     }
     if (this.seatsOpen) this.renderSeats();
+    this.layoutBars();
   }
 
   // ---------- barra de ações ----------
@@ -727,7 +729,7 @@ export class GameScreen {
     const start = btn('Iniciar partida', () => this.b.start(), 'primary');
     start.disabled = v.players.filter((p) => p.connected || p.bot).length < 2;
     const actions = host
-      ? h('div', { class: 'row' }, btn('Posições na mesa', () => this.openSeats()), start)
+      ? h('div', { class: 'row' }, btn('Ordem das jogadas', () => this.openSeats()), start)
       : h('p', { class: 'muted', text: 'Aguardando o anfitrião iniciar a partida…' });
     return h(
       'div',
@@ -817,7 +819,6 @@ export class GameScreen {
   // ---------- posições na mesa (anfitrião) ----------
   private openSeats(): void {
     this.seatsOpen = true;
-    this.seatPick = null;
     this.seatModal = h('div', { class: 'modal' });
     document.body.append(this.seatModal);
     this.renderSeats();
@@ -827,38 +828,31 @@ export class GameScreen {
     const v = this.view;
     const modal = this.seatModal;
     if (!v || !modal) return;
-    const mySeat = this.me()?.seat ?? 0;
     clear(modal);
-    const table = h('div', { class: 'seat-table' });
-    for (let rel = 0; rel < 4; rel++) {
-      const abs = (mySeat + rel) % 4;
-      const occupant = v.players.find((p) => p.seat === abs && !p.left);
-      const slot = h('button', {
-        class: `slot pos-${rel}${occupant ? ' taken' : ''}${occupant && this.seatPick === occupant.id ? ' picked' : ''}`,
-        text: occupant ? occupant.name : 'vazio',
-        attrs: { type: 'button' },
-        on: {
-          click: () => {
-            if (occupant && (!this.seatPick || this.seatPick === occupant.id)) {
-              this.seatPick = this.seatPick === occupant.id ? null : occupant.id;
-            } else if (this.seatPick) {
-              this.b.seat(this.seatPick, abs);
-              this.seatPick = null;
-            }
-            this.renderSeats();
-          },
-        },
-      });
-      table.append(slot);
-    }
+    const order = v.players.filter((p) => !p.left).sort((a, b) => a.seat - b.seat);
+    const list = h('ol', { class: 'order' });
+    order.forEach((p, i) => {
+      const move = (to: number): void => {
+        const other = order[to];
+        if (other) this.b.seat(p.id, other.seat);
+      };
+      list.append(
+        h(
+          'li',
+          {},
+          h('span', { text: `${i + 1}. ${p.bot ? '🤖 ' : ''}${p.name}` }),
+          h('span', { class: 'mv' }, btn('▲', () => move(i - 1), `small ghost${i === 0 ? ' off' : ''}`), btn('▼', () => move(i + 1), `small ghost${i === order.length - 1 ? ' off' : ''}`)),
+        ),
+      );
+    });
     modal.append(
       h(
         'div',
         { class: 'panel seats' },
-        h('h3', { text: 'Posições na mesa' }),
-        h('p', { class: 'muted', text: 'Toque em um jogador e depois no lugar de destino (troca com quem estiver lá). A ordem das jogadas segue o sentido horário a partir do início da partida.' }),
-        table,
-        btn('Pronto', () => this.closeSeats(), 'primary'),
+        h('h3', { text: 'Ordem das jogadas' }),
+        h('p', { class: 'muted', text: v.orderLocked ? 'Ordem definida por você. Use ▲ ▼ para mudar.' : 'A ordem é sorteada a cada jogador que entra. Se você mudar, ela fica como você deixou.' }),
+        list,
+        h('div', { class: 'row' }, btn('Sortear de novo', () => this.b.shuffle(), 'ghost'), btn('Pronto', () => this.closeSeats(), 'primary')),
       ),
     );
   }

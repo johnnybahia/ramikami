@@ -8,7 +8,6 @@ import type { SetState } from '../shared/layout';
 import type { RoomPlayer, RoomView, TurnSeconds } from '../shared/protocol';
 import type { OfflineSettings, Profile } from './store';
 
-const BOT_SEATS: Record<number, number[]> = { 1: [2], 2: [1, 3], 3: [1, 2, 3] };
 
 /** Partida contra bots, sem internet: roda a mesma engine do servidor no próprio aparelho. */
 export class LocalBackend implements Backend {
@@ -28,9 +27,13 @@ export class LocalBackend implements Backend {
 
   connect(): void {
     const bots = pickBots(this.cfg.level, this.cfg.bots).map((p) => ({ id: p.id, name: p.name, isBot: true }));
-    const seatList = BOT_SEATS[this.cfg.bots]!;
-    this.seats.set(this.profile.id, 0);
-    bots.forEach((b, i) => this.seats.set(b.id, seatList[i]!));
+    // ordem das jogadas sorteada
+    const ids = [this.profile.id, ...bots.map((b) => b.id)];
+    for (let i = ids.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [ids[i], ids[j]] = [ids[j]!, ids[i]!];
+    }
+    ids.forEach((id, i) => this.seats.set(id, i));
     const order = [{ id: this.profile.id, name: this.profile.name }, ...bots].sort((a, b) => this.seats.get(a.id)! - this.seats.get(b.id)!);
     const seed = Number(new URLSearchParams(location.search).get('seed'));
     this.game = createGame(order, seed > 0 ? mulberry32(seed) : Math.random);
@@ -60,6 +63,7 @@ export class LocalBackend implements Backend {
       hostId: this.profile.id,
       turnSeconds: (this.cfg.turnSeconds || 60) as TurnSeconds,
       bestOf: 3,
+      orderLocked: false,
       isPublic: false,
       you: this.profile.id,
       players,
@@ -141,6 +145,7 @@ export class LocalBackend implements Backend {
   start(): void {}
   seat(): void {}
   settings(): void {}
+  shuffle(): void {}
   next(): void {}
   more(): void {}
   confirm(): void {}
