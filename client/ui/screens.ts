@@ -35,6 +35,10 @@ export function showProfile(root: HTMLElement, existing: Profile | null, onDone:
   const id = existing?.id ?? newId();
   const nameIn = h('input', { class: 'input', attrs: { type: 'text', maxlength: String(NAME_MAX), placeholder: 'Seu nome', autocomplete: 'nickname' } });
   nameIn.value = existing?.name ?? '';
+  const camIn = h('input', { attrs: { type: 'checkbox' } });
+  const micIn = h('input', { attrs: { type: 'checkbox' } });
+  camIn.checked = !!existing?.cam;
+  micIn.checked = !!existing?.mic;
   const preview = h('div', { class: 'photo-preview' });
   const drawPreview = (): void => {
     clear(preview);
@@ -59,7 +63,7 @@ export function showProfile(root: HTMLElement, existing: Profile | null, onDone:
   const save = (): void => {
     const name = nameIn.value.trim();
     if (name.length < 2) return toast('Digite um nome com pelo menos 2 letras.');
-    const p: Profile = { id, name, photo };
+    const p: Profile = { id, name, photo, cam: camIn.checked, mic: micIn.checked };
     saveProfile(p);
     onDone(p);
   };
@@ -76,6 +80,8 @@ export function showProfile(root: HTMLElement, existing: Profile | null, onDone:
         preview,
         h('div', { class: 'row' }, btn('Escolher foto', () => pick(false)), btn('Tirar selfie', () => pick(true)), photo || existing?.photo ? btn('Remover', () => { photo = null; drawPreview(); }, 'ghost') : null),
         nameIn,
+        h('label', { class: 'check' }, camIn, h('span', { text: 'Entrar nas salas ao vivo com minha câmera (no lugar da foto)' })),
+        h('label', { class: 'check' }, micIn, h('span', { text: 'Entrar nas salas com o microfone ligado' })),
         h('div', { class: 'row' }, btn('Salvar e continuar', save, 'primary'), existing && onCancel ? btn('Cancelar', onCancel, 'ghost') : null),
       ),
     ),

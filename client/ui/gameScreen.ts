@@ -5,6 +5,7 @@ import { TableScene, type Mode } from '../game/scene';
 import {
   draftStatus,
   dropNew,
+  placeSets,
   dropOnSet,
   dropToRack,
   isDirty,
@@ -17,7 +18,8 @@ import {
   MELD_MIN,
   type Draft,
 } from '../game/draft';
-import { analyzeSet } from '../../shared/rules';
+import { analyzeSet, arrangeTiles } from '../../shared/rules';
+import { isJoker } from '../../shared/tiles';
 import { relayout, type SetState } from '../../shared/layout';
 import { TURN_SECONDS_OPTIONS, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
 import { applyUpdate, onPwa, type PwaState } from '../pwa';
@@ -60,6 +62,13 @@ export class GameScreen {
   private receivedAt = 0;
   private draft: Draft | null = null;
   private undo: Draft[] = [];
+  private selected = new Set<number>();
+  private btnPlaySel!: HTMLButtonElement;
+  private turnBanner = h('div', { class: 'turn-banner hidden', text: '⚡ SUA VEZ! Toque para começar' });
+  private nagTimer = 0;
+  private autoMediaDone = false;
+  private btnCam!: HTMLButtonElement;
+  private btnMic!: HTMLButtonElement;
   private mode: Mode = 'tile';
   private remoteDraft: SetState[] | null = null;
   private photos = new Map<string, string>();
@@ -100,6 +109,7 @@ export class GameScreen {
       onSetMove: (sid, dx, dz) => this.onSetMove(sid, dx, dz),
       onSplit: (sid, i) => this.onSplit(sid, i),
       onPoolTap: () => this.requestDraw(),
+      onPick: (id) => this.onPick(id),
     });
     this.buildTopbar();
     this.buildActions();
@@ -163,6 +173,15 @@ export class GameScreen {
     }
     this.b.media(this.rtc.camOn, this.rtc.micOn);
     this.renderBoxes();
+    if (this.view?.phase === 'lobby') this.renderOverlay();
+  }
+
+  /** Aplica a preferência do perfil (câmera/microfone) uma vez, ao entrar na sala. */
+  private autoMedia(): void {
+    if (this.autoMediaDone || !this.rtc || !this.me()) return;
+    this.autoMediaDone = true;
+    if (this.o.profile.cam) void this.toggleMedia('cam');
+    if (this.o.profile.mic) void this.toggleMedia('mic');
   }
 
   // ---------- visão do servidor ----------
@@ -172,6 +191,33 @@ export class GameScreen {
 
   private myTurn(): boolean {
     return !!this.view && this.view.phase === 'playing' && this.view.turnId === this.view.you;
+  }
+
+  private startTurnAlert(): void {
+    this.stopTurnAlert();
+    this.turnBanner.classList.remove('hidden');
+    this.root.classList.add('my-turn');
+    let n = 0;
+    const buzz = (): void => {
+      navigator.vibrate?.([220, 120, 220]);
+      if (++n >= 8) window.clearInterval(this.nagTimer);
+    };
+    buzz();
+    this.nagTimer = window.setInterval(buzz, 6000);
+    window.addEventListener('pointerdown', this.ackTurn, { capture: true, once: true });
+    window.addEventListener('keydown', this.ackTurn, { capture: true, once: true });
+  }
+
+  private ackTurn = (): void => this.stopTurnAlert();
+
+  private stopTurnAlert(): void {
+    window.clearInterval(this.nagTimer);
+    this.nagTimer = 0;
+    this.turnBanner.classList.add('hidden');
+    this.root.classList.remove('my-turn');
+    window.removeEventListener('pointerdown', this.ackTurn, true);
+    window.removeEventListener('keydown', this.ackTurn, true);
+    navigator.vibrate?.(0);
   }
 
   private onView(v: RoomView): void {
@@ -191,12 +237,12 @@ export class GameScreen {
       if (!prev || prev.phase === 'lobby') d = sortRack(d, 'num');
       this.draft = d;
     }
+    this.autoMedia();
     if (v.turnId !== this.lastTurnId) {
       this.lastTurnId = v.turnId;
       if (v.turnId === v.you && v.phase === 'playing') {
-        toast('Sua vez!', 1400);
-        navigator.vibrate?.(40);
-      }
+        this.startTurnAlert();
+      } else this.stopTurnAlert();
     }
     const ids = v.players.filter((p) => !p.left && p.connected).map((p) => p.id);
     if (this.rtc) this.rtc.setPeers(ids);
@@ -217,6 +263,24 @@ export class GameScreen {
     this.sync();
     this.updateActions();
     this.sendDraft();
+  }
+
+  private onPick(id: number): void {
+    if (!this.draft || !this.myTurn() || !this.draft.rack.includes(id)) return;
+    if (this.selected.has(id)) this.selected.delete(id);
+    else if (isJoker(id) && [...this.selected].some(isJoker)) return toast('Marque no máximo 1 coringa.');
+    else this.selected.add(id);
+    this.sync();
+    this.updateActions();
+  }
+
+  private playSelected(): void {
+    const d = this.draft;
+    if (!d || !this.myTurn()) return;
+    const r = arrangeTiles([...this.selected], d.melded);
+    if (!r.ok) return toast(r.reason);
+    this.selected.clear();
+    this.apply(placeSets(d, r.sets), 'Sem espaço na mesa.');
   }
 
   private onRackDrop(id: number, index: number): void {
@@ -293,6 +357,7 @@ export class GameScreen {
     const d = this.draft;
     const v = this.view;
     if (!d || !v) return;
+    for (const id of this.selected) if (!d.rack.includes(id)) this.selected.delete(id);
     const st = draftStatus(d);
     const table = this.remoteDraft ?? d.table;
     let valid = st.setValid;
@@ -308,6 +373,7 @@ export class GameScreen {
       canEditBoard: this.myTurn(),
       mode: this.mode,
       poolCount: v.poolCount,
+      selected: this.selected,
     });
     this.layoutBars();
   }
@@ -494,23 +560,28 @@ export class GameScreen {
       ['tile', '✋', 'Mover pedra'],
       ['set', '▭', 'Mover conjunto inteiro'],
       ['split', '✂', 'Dividir conjunto (toque na pedra onde cortar)'],
+      ['pick', '☑', 'Marcar pedras do cavalete para jogar de uma vez'],
     ];
+    this.btnCam = mk('📷', 'Mostrar minha imagem ao vivo no lugar da foto', () => void this.toggleMedia('cam'));
+    this.btnMic = mk('🎤', 'Microfone', () => void this.toggleMedia('mic'));
     const modes = h('div', { class: 'modes' });
     for (const [m, label, title] of modeDefs) {
       const b = mk(label, title, () => {
         this.mode = m;
+        if (m !== 'pick') this.selected.clear();
         this.sync();
         this.updateActions();
       }, 'mode');
       this.modeBtns.set(m, b);
       modes.append(b);
     }
+    this.btnPlaySel = h('button', { class: 'btn confirm hidden', attrs: { type: 'button' }, on: { click: () => this.playSelected() } });
     this.btnDraw = h('button', { class: 'btn draw', text: 'Comprar', attrs: { type: 'button' }, on: { click: () => this.requestDraw() } });
     this.btnConfirm = h('button', { class: 'btn confirm', text: 'Confirmar', attrs: { type: 'button' }, on: { click: () => this.doConfirm() } });
-    const left = h('div', { class: 'tools' }, this.btnUndo, this.btnReset, sortNum, sortCol, modes);
-    const right = h('div', { class: 'mainact' }, this.btnDraw, this.btnConfirm);
+    const left = h('div', { class: 'tools' }, this.btnUndo, this.btnReset, sortNum, sortCol, modes, ...(this.b.mode === 'online' ? [this.btnCam, this.btnMic] : []));
+    const right = h('div', { class: 'mainact' }, this.btnPlaySel, this.btnDraw, this.btnConfirm);
     this.actionbar.append(left, right);
-    this.root.append(this.statusEl);
+    this.root.append(this.statusEl, this.turnBanner);
   }
 
   private updateActions(): void {
@@ -523,6 +594,13 @@ export class GameScreen {
     this.btnUndo.disabled = !mine || this.undo.length === 0;
     this.btnReset.disabled = !mine || !isDirty(d);
     this.btnDraw.disabled = !mine;
+    const me = this.me();
+    this.btnCam.classList.toggle('active', !!me?.cam);
+    this.btnMic.classList.toggle('active', !!me?.mic);
+    this.btnCam.textContent = me?.cam ? '📷' : '🚫';
+    this.btnMic.textContent = me?.mic ? '🎤' : '🔇';
+    this.btnPlaySel.classList.toggle('hidden', !mine || this.mode !== 'pick' || this.selected.size < 3);
+    this.btnPlaySel.textContent = `Jogar marcadas (${this.selected.size})`;
     this.btnDraw.textContent = v.poolCount === 0 ? 'Passar' : 'Comprar';
     const st = draftStatus(d);
     const dirty = isDirty(d);
@@ -583,7 +661,12 @@ export class GameScreen {
       seg,
       list,
       h('div', { class: 'row' }, btn('Convidar', () => void this.shareRoom())),
-      h('p', { class: 'hint', text: 'Dica: ligue a câmera e o microfone no seu quadro (📷 🎤). Fica desligado até você ligar.' }),
+      h(
+        'div',
+        { class: 'row' },
+        btn(this.rtc?.camOn ? '📷 Câmera ligada' : '🚫 Entrar sem câmera', () => void this.toggleMedia('cam'), this.rtc?.camOn ? 'primary' : ''),
+        btn(this.rtc?.micOn ? '🎤 Microfone ligado' : '🔇 Entrar sem microfone', () => void this.toggleMedia('mic'), this.rtc?.micOn ? 'primary' : ''),
+      ),
       actions,
       h('div', { class: 'row' }, btn('Sair da sala', () => this.exit(true), 'ghost')),
     );
@@ -689,6 +772,7 @@ export class GameScreen {
     this.offPwa();
     this.closeSeats();
     this.b.leave();
+    this.stopTurnAlert();
     this.rtc?.close();
     this.scene.dispose();
     this.root.remove();

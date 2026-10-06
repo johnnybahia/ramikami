@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeSet, validatePlay } from './rules';
+import { analyzeSet, arrangeTiles, validatePlay } from './rules';
 import { createGame, drawTurn, playTurn, removePlayer, currentPlayer } from './game';
 import { botMove } from './bot';
 import { mulberry32, handPoints } from './tiles';
@@ -112,5 +112,23 @@ describe('game', () => {
       const min = Math.min(...g.players.map((p) => handPoints(p.rack)));
       expect(g.result!.winners.every((w) => handPoints(g.players.find((p) => p.id === w)!.rack) === min)).toBe(true);
     }
+  });
+});
+
+describe('arrangeTiles', () => {
+  it('divide em sequência + trinca', () => {
+    const r = arrangeTiles([T(0, 4), T(0, 5), T(0, 6), T(0, 7), T(1, 9), T(2, 9), T(3, 9)], true);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.sets.map((s) => s.length).sort()).toEqual([3, 4]);
+  });
+  it('coringa preenche lacuna', () => {
+    const r = arrangeTiles([T(0, 4), J1, T(0, 6)], true);
+    expect(r).toMatchObject({ ok: true, points: 15 });
+  });
+  it('rejeita 2 coringas, sobra de pedra e abertura < 30', () => {
+    expect(arrangeTiles([T(0, 4), J1, J2], true).ok).toBe(false);
+    expect(arrangeTiles([T(0, 4), T(0, 5), T(0, 6), T(2, 13)], true).ok).toBe(false);
+    expect(arrangeTiles([T(0, 4), T(0, 5), T(0, 6)], false).ok).toBe(false);
+    expect(arrangeTiles([T(0, 10), T(0, 11), T(0, 12)], false).ok).toBe(true);
   });
 });
