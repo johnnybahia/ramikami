@@ -4,7 +4,7 @@ import { createGame, drawTurn, playTurn, removePlayer, currentPlayer, salvagePla
 import { botMove, pickBots, PERSONAS } from './bot';
 import { solveTable } from './solver';
 import { mulberry32, handPoints } from './tiles';
-import { findCompactSpot, relayout, type SetState } from './layout';
+import { findCompactSpot, packRows, relayout, type SetState } from './layout';
 
 // id = cor*26 + (num-1) (+13 para a segunda cópia). cor 0 preto, 1 azul, 2 vermelho, 3 laranja
 const T = (color: number, num: number, copy = 0) => color * 13 + (num - 1) + copy * 52;
@@ -254,9 +254,36 @@ describe('findCompactSpot', () => {
     const xs = table.map((s) => s.x);
     expect(Math.min(...xs)).toBeGreaterThanOrEqual(10);
     expect(Math.max(...xs)).toBeLessThanOrEqual(23);
-    // fileiras com uma fileira vazia entre elas
-    const rows = [...new Set(table.map((s) => s.z))].sort((a, b) => a - b);
-    for (let i = 1; i < rows.length; i++) expect(rows[i]! - rows[i - 1]!).toBeGreaterThanOrEqual(2);
+    // mesma fileira: sempre uma pedra de distância entre conjuntos
+    for (const a of table) for (const b of table) if (a !== b && a.z === b.z) expect(a.x + a.tiles.length + 1 <= b.x || b.x + b.tiles.length + 1 <= a.x).toBe(true);
     expect(relayout(table).map((s) => [s.x, s.z])).toEqual(table.map((s) => [s.x, s.z]));
+  });
+});
+
+describe('grade: packRows e relayout', () => {
+  const set = (id: number, n: number, x: number, z: number): SetState => ({ id, tiles: Array.from({ length: n }, (_, i) => id * 10 + i), x, z });
+  it('conjunto que cresce empurra os vizinhos da linha para a direita, mantendo uma pedra de distância', () => {
+    const a = set(1, 5, 2, 3); // 2..6 (cresceu)
+    const b = set(2, 3, 8, 3); // 8..10: ficou colado
+    const c = set(3, 3, 12, 3);
+    const out = packRows([a, b, c], 1)!;
+    const get = (id: number) => out.find((s) => s.id === id)!;
+    expect(get(1).x).toBe(2);
+    expect(get(2).x).toBe(8);
+    expect(get(3).x).toBe(12);
+    const grown = packRows([set(1, 7, 2, 3), b, c], 1)!;
+    expect(grown.find((s) => s.id === 2)!.x).toBe(10); // 2..8 + 1 de folga
+    expect(grown.find((s) => s.id === 3)!.x).toBe(14); // empurrado em cadeia
+  });
+  it('na borda direita puxa para a esquerda; outras fileiras não mudam', () => {
+    const out = packRows([set(1, 5, 28, 2), set(2, 3, 20, 2), set(3, 4, 10, 5)], 1)!;
+    const g = (id: number) => out.find((s) => s.id === id)!;
+    expect(g(1).x + 5).toBeLessThanOrEqual(34);
+    expect(g(2).x + 3 + 1).toBeLessThanOrEqual(g(1).x);
+    expect(g(3).x).toBe(10);
+  });
+  it('relayout nunca deixa dois conjuntos colados na mesma linha', () => {
+    const out = relayout([set(1, 4, 5, 1), set(2, 4, 7, 1), set(3, 3, 8, 1)]);
+    for (const a of out) for (const b of out) if (a !== b && a.z === b.z) expect(a.x + a.tiles.length + 1 <= b.x || b.x + b.tiles.length + 1 <= a.x).toBe(true);
   });
 });

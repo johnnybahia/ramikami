@@ -306,7 +306,7 @@ export class GameScreen {
     if (!this.draft || !this.myTurn()) return this.sync();
     const act = resolveBoardDrop(tableWithoutTile(this.draft.table, id), cx, cz);
     const spot = act.kind === 'new' ? newSetSpot(this.draft.table, id, cx, cz) : null;
-    this.apply(act.kind === 'insert' ? dropOnSet(this.draft, id, act.setId, act.index) : dropNew(this.draft, id, spot!.x, spot!.z), 'Sem espaço na mesa.');
+    this.apply(act.kind === 'insert' ? dropOnSet(this.draft, id, act.setId, act.index) : dropNew(this.draft, id, spot!.x, spot!.z, spot!.exact), 'Sem espaço na mesa.');
   }
 
   private onSetMove(setId: number, dx: number, dz: number): void {

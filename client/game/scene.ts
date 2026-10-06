@@ -580,8 +580,13 @@ export class TableScene {
     const g = this.computeFit();
     if (g.key === this.boundsKey) return;
     this.boundsKey = g.key;
-    // se o jogador mexeu na câmera, só reenquadra quando algo passa a ficar fora da tela
-    if (!this.autoFit && this.allVisible()) return;
+    // na minha vez a câmera não mexe enquanto monto (senão o enquadramento muda debaixo do dedo): só se algo sair da tela
+    if (this.state.canEditBoard) {
+      if (this.allVisible()) return;
+    } else if (!this.autoFit && this.allVisible()) {
+      // se o jogador mexeu na câmera, só reenquadra quando algo passa a ficar fora da tela
+      return;
+    }
     this.autoFit = true;
     this.camGoal = { tx: g.tx, tz: g.tz, dist: g.dist };
   }
