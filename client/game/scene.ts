@@ -10,7 +10,7 @@ import { onSkinChange, skinById, skinTexture, type SkinId } from './skins';
 export const BOARD_W = COLS * CELL_W;
 export const BOARD_D = ROWS * ROW_D;
 
-export type Mode = 'tile' | 'set' | 'split' | 'pick';
+export type Mode = 'tile' | 'pick';
 type Region = 'board' | 'rack';
 
 export interface SceneState {
@@ -31,18 +31,18 @@ export interface SceneHandlers {
   onRackDrop(id: number, index: number): void;
   onBoardDrop(id: number, cx: number, cz: number): void;
   onSetMove(setId: number, dx: number, dz: number): void;
-  onSplit(setId: number, index: number): void;
+  onPickBoard(id: number, whole: boolean): void;
   onPoolTap(): void;
 }
 
 type Interaction =
   | null
   | { type: 'tile'; id: number; startX: number; startY: number; active: boolean }
-  | { type: 'set'; setId: number; anchor: THREE.Vector3; startX: number; startY: number; active: boolean; dx: number; dz: number }
+  | { type: 'set'; setId: number; ids: Set<number>; anchor: THREE.Vector3; startX: number; startY: number; active: boolean; dx: number; dz: number }
+  | { type: 'selpress'; id: number; startX: number; startY: number; timer: number; fired: boolean }
   | { type: 'hold'; id: number; startX: number; startY: number; timer: number }
   | { type: 'pan'; anchor: THREE.Vector3 }
   | { type: 'pool'; startX: number; startY: number }
-  | { type: 'split'; setId: number; index: number; startX: number; startY: number }
   | { type: 'pinch'; startDist: number; startCam: number };
 
 const ELEV = THREE.MathUtils.degToRad(64);
@@ -433,8 +433,9 @@ export class TableScene {
       } else if (w) {
         region = 'board';
         if (slow && t.present) oldTarget.copy(t.target);
-        const lift = setDrag && setDrag.setId === w.set.id ? 0.5 : 0;
-        const p = this.boardPos(w.set.x + (setDrag && setDrag.setId === w.set.id ? setDrag.dx : 0), w.index, w.set.z + (setDrag && setDrag.setId === w.set.id ? setDrag.dz : 0), lift);
+        const moving = !!setDrag && setDrag.ids.has(t.id);
+        const lift = moving ? 0.5 : 0;
+        const p = this.boardPos(w.set.x + (moving ? setDrag!.dx : 0), w.index, w.set.z + (moving ? setDrag!.dz : 0), lift);
         t.target.copy(p);
         t.targetRotY = 0;
       }
@@ -486,7 +487,7 @@ export class TableScene {
         tint = 0x3dff7a;
         k = 0.42;
       }
-      if (region === 'rack' && s.selected.has(t.id)) {
+      if (s.selected.has(t.id)) {
         tint = 0xffd23a;
         k = 0.55;
       }
@@ -699,11 +700,15 @@ export class TableScene {
         return;
       }
       const loc = this.locate(id);
-      if (this.state.mode === 'set' && loc) {
-        const g = this.ground('board', p.x, p.y);
-        this.it = { type: 'set', setId: loc.set.id, anchor: g ?? new THREE.Vector3(), startX: p.x, startY: p.y, active: false, dx: 0, dz: 0 };
-      } else if (this.state.mode === 'split' && loc) {
-        this.it = { type: 'split', setId: loc.set.id, index: loc.index, startX: p.x, startY: p.y };
+      if (this.state.mode === 'pick' && loc) {
+        const timer = window.setTimeout(() => {
+          const cur = this.it;
+          if (!cur || cur.type !== 'selpress') return;
+          cur.fired = true;
+          navigator.vibrate?.(18);
+          this.handlers.onPickBoard(cur.id, true);
+        }, HOLD_MS);
+        this.it = { type: 'selpress', id, startX: p.x, startY: p.y, timer, fired: false };
       } else if (e.pointerType !== 'mouse') {
         // no toque, a pedra da mesa só levanta se o dedo ficar parado: arrastar rápido rola a mesa
         const timer = window.setTimeout(() => this.liftHeld(), HOLD_MS);
@@ -745,7 +750,7 @@ export class TableScene {
   }
 
   private cancelActive(): void {
-    if (this.it && this.it.type === 'hold') window.clearTimeout(this.it.timer);
+    if (this.it && (this.it.type === 'hold' || this.it.type === 'selpress')) window.clearTimeout(this.it.timer);
     if (this.it && this.it.type === 'tile' && this.it.active) this.tiles[this.it.id]!.dragging = false;
     this.it = null;
     this.hideHints();
@@ -789,7 +794,18 @@ export class TableScene {
       }
       return;
     }
-    if (it.type === 'pool' || it.type === 'split') {
+    if (it.type === 'selpress') {
+      if (Math.hypot(p.x - it.startX, p.y - it.startY) <= DRAG_THRESHOLD) return;
+      window.clearTimeout(it.timer);
+      const loc = this.locate(it.id);
+      if (this.state.selected.has(it.id) && loc) {
+        const g = this.ground('board', it.startX, it.startY);
+        this.it = { type: 'set', setId: loc.set.id, ids: new Set(this.state.selected), anchor: g ?? new THREE.Vector3(), startX: it.startX, startY: it.startY, active: false, dx: 0, dz: 0 };
+        this.onMove(e);
+      } else this.startPan(p);
+      return;
+    }
+    if (it.type === 'pool') {
       if (Math.hypot(p.x - it.startX, p.y - it.startY) > DRAG_THRESHOLD * 2) this.startPan(p);
       return;
     }
@@ -907,8 +923,9 @@ export class TableScene {
     }
     if (it.type === 'pool') {
       if (Math.hypot(p.x - it.startX, p.y - it.startY) <= DRAG_THRESHOLD * 2) this.handlers.onPoolTap();
-    } else if (it.type === 'split') {
-      if (Math.hypot(p.x - it.startX, p.y - it.startY) <= DRAG_THRESHOLD * 2) this.handlers.onSplit(it.setId, it.index);
+    } else if (it.type === 'selpress') {
+      window.clearTimeout(it.timer);
+      if (!it.fired && Math.hypot(p.x - it.startX, p.y - it.startY) <= DRAG_THRESHOLD * 2) this.handlers.onPickBoard(it.id, false);
     } else if (it.type === 'set') {
       if (it.active && (it.dx !== 0 || it.dz !== 0)) this.handlers.onSetMove(it.setId, it.dx, it.dz);
       this.syncTiles();

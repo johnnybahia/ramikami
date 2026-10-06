@@ -236,6 +236,47 @@ export function splitSet(d: Draft, setId: number, index: number): Draft | null {
   return n;
 }
 
+/**
+ * Leva um trecho contínuo (índices from..to) de um conjunto para (x, z). O que sobra fica onde estava,
+ * em até duas partes (rascunho: elas só precisam voltar a ser válidas até Confirmar).
+ */
+export function moveStretch(d: Draft, setId: number, from: number, to: number, x: number, z: number): Draft | null {
+  const s = d.table.find((v) => v.id === setId);
+  if (!s || from < 0 || to < from || to >= s.tiles.length) return null;
+  if (from === 0 && to === s.tiles.length - 1) return moveSet(d, setId, x, z);
+  const n = cloneDraft(d);
+  const src = n.table.find((v) => v.id === setId)!;
+  const stretch = src.tiles.slice(from, to + 1);
+  const left = src.tiles.slice(0, from);
+  const right = src.tiles.slice(to + 1);
+  const baseX = src.x;
+  if (left.length > 0 && right.length > 0) {
+    src.tiles = left;
+    n.table.push({ id: nextId(n), tiles: right, x: baseX + to + 1, z: src.z });
+  } else if (left.length > 0) {
+    src.tiles = left;
+  } else {
+    src.tiles = right;
+    src.x = baseX + to + 1;
+  }
+  const created: SetState = { id: nextId(n), tiles: stretch, x: Math.max(0, Math.min(COLS - stretch.length, Math.round(x))), z: Math.max(0, Math.min(ROWS - 1, Math.round(z))) };
+  n.table.push(created);
+  const packed = n.melded ? packRows(n.table, created.id) : null;
+  if (packed) {
+    for (const p of packed) {
+      const t = n.table.find((v) => v.id === p.id)!;
+      t.x = p.x;
+      t.z = p.z;
+    }
+    return n;
+  }
+  n.table.pop();
+  const spot = findSpot(n.table, -1, created.x, created.z, stretch.length);
+  if (!spot) return null;
+  n.table.push({ id: created.id, tiles: stretch, x: spot.x, z: spot.z });
+  return n;
+}
+
 export function moveSet(d: Draft, setId: number, x: number, z: number): Draft | null {
   const n = cloneDraft(d);
   const s = n.table.find((v) => v.id === setId);

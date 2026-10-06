@@ -35,26 +35,43 @@ export function findSpot(table: readonly SetState[], skipId: number, wantX: numb
   return best;
 }
 
+/** Custo de enquadramento: quanto menor, maiores ficam as pedras na tela (uma fileira vale ~1,64 colunas no celular em pé). */
+function frameCost(minX: number, maxX: number, minZ: number, maxZ: number): number {
+  return Math.max(maxX - minX, 1.64 * (maxZ - minZ + 1));
+}
+
 /**
- * Lugar para um conjunto novo (jogadas de bots e "jogar marcadas"): começa no mesmo enquadramento da tela
- * (perto do centro), enche cada fileira da esquerda para a direita e pula uma fileira entre elas para as
- * pedras ficarem mais separadas. Só abre para os lados/cima/baixo quando não houver mais espaço útil.
+ * Lugar para um conjunto novo (jogadas de bots e "jogar marcadas"): escolhe a vaga que deixa a mesa com o
+ * menor enquadramento (largura x altura, pesando a tela do celular em pé), empilhando os jogos em colunas
+ * alinhadas em vez de espalhar; empate vai para o mais perto do centro.
  */
 export function findCompactSpot(table: readonly SetState[], len: number): { x: number; z: number } | null {
-  const cx = Math.floor(COLS / 2);
-  const cz = Math.floor(ROWS / 2);
-  const rows: number[] = [0];
-  for (let d = 1; d <= ROWS; d++) rows.push(-d, d);
-  for (let half = 5; half <= COLS / 2; half += 3) {
-    const lo = Math.max(0, cx - half);
-    const hi = Math.min(COLS, cx + half + 1);
-    for (const dz of rows) {
-      const z = cz + dz;
-      if (z < 0 || z >= ROWS) continue;
-      for (let x = lo; x + len <= hi; x++) if (fits(table, -1, x, z, len)) return { x, z };
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const s of table) {
+    minX = Math.min(minX, s.x);
+    maxX = Math.max(maxX, s.x + s.tiles.length);
+    minZ = Math.min(minZ, s.z);
+    maxZ = Math.max(maxZ, s.z);
+  }
+  let best: { x: number; z: number } | null = null;
+  let bestCost = Infinity;
+  let bestD = Infinity;
+  for (let z = 0; z < ROWS; z++) {
+    for (let x = 0; x + len <= COLS; x++) {
+      if (!fits(table, -1, x, z, len)) continue;
+      const c = frameCost(Math.min(minX, x), Math.max(maxX, x + len), Math.min(minZ, z), Math.max(maxZ, z));
+      const d = Math.abs(x + len / 2 - COLS / 2) + Math.abs(z - ROWS / 2) * 2;
+      if (c < bestCost - 1e-9 || (Math.abs(c - bestCost) < 1e-9 && d < bestD)) {
+        bestCost = c;
+        bestD = d;
+        best = { x, z };
+      }
     }
   }
-  return findSpot(table, -1, cx, cz, len);
+  return best;
 }
 
 /**
