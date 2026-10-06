@@ -136,7 +136,8 @@ export const isBotId = (id: string): boolean => id.startsWith('bot-');
 export function pickBots(level: BotLevel, count: number, rng: () => number = Math.random): Persona[] {
   const pool = PERSONAS.filter((p) => p.level === level);
   const out: Persona[] = [];
-  while (out.length < Math.min(count, pool.length)) {
+  const n = Math.min(count, pool.length);
+  while (out.length < n) {
     const i = Math.floor(rng() * pool.length);
     out.push(pool.splice(i, 1)[0]!);
   }
