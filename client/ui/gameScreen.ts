@@ -14,6 +14,7 @@ import {
   resolveBoardDrop,
   sortRack,
   splitSet,
+  suggestDrop,
   tidyTable,
   tableWithoutTile,
   MELD_MIN,
@@ -23,7 +24,7 @@ import { analyzeSet, arrangeTiles } from '../../shared/rules';
 import { isJoker } from '../../shared/tiles';
 import { PERSONAS, botIdOf, personaOfBotId } from '../../shared/bot';
 import { personaAvatar } from '../botAvatars';
-import { a11yPanel } from './screens';
+import { a11yPanel, modal } from './screens';
 import { relayout, type SetState } from '../../shared/layout';
 import { TURN_SECONDS_OPTIONS, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
 import { applyUpdate, checkForUpdate, onPwa, type PwaState } from '../pwa';
@@ -71,8 +72,6 @@ export class GameScreen {
   private turnBanner = h('div', { class: 'turn-banner hidden', text: '⚡ SUA VEZ! Toque para começar' });
   private nagTimer = 0;
   private autoMediaDone = false;
-  private btnCam!: HTMLButtonElement;
-  private btnMic!: HTMLButtonElement;
   private mode: Mode = 'tile';
   private remoteDraft: SetState[] | null = null;
   private photos = new Map<string, string>();
@@ -91,9 +90,8 @@ export class GameScreen {
   private seatModal: HTMLElement | null = null;
   private b: Backend;
   private timerPill = h('div', { class: 'pill timer', text: '' });
-  private codePill = h('button', { class: 'pill code', attrs: { type: 'button' } });
-  private poolPill = h('button', { class: 'pill pool', attrs: { type: 'button' } });
-  private updatePill = h('button', { class: 'pill update', attrs: { type: 'button' } });
+  private menuBtn = h('button', { class: 'pill menu', text: '☰ Menu', attrs: { type: 'button' } });
+  private zoomDock = h('div', { class: 'zoomdock' });
   private btnConfirm!: HTMLButtonElement;
   private btnDraw!: HTMLButtonElement;
   private btnUndo!: HTMLButtonElement;
@@ -300,7 +298,8 @@ export class GameScreen {
 
   private onBoardDrop(id: number, cx: number, cz: number): void {
     if (!this.draft || !this.myTurn()) return this.sync();
-    const act = resolveBoardDrop(tableWithoutTile(this.draft.table, id), cx, cz);
+    let act = resolveBoardDrop(tableWithoutTile(this.draft.table, id), cx, cz);
+    if (act.kind === 'new') act = suggestDrop(this.draft.table, id, cx, cz) ?? act;
     this.apply(act.kind === 'insert' ? dropOnSet(this.draft, id, act.setId, act.index) : dropNew(this.draft, id, act.x, act.z), 'Sem espaço na mesa.');
   }
 
@@ -407,26 +406,41 @@ export class GameScreen {
   }
 
   private buildTopbar(): void {
-    const exit = h('button', { class: 'pill exit', text: '✕', attrs: { type: 'button', 'aria-label': 'Sair' }, on: { click: () => this.exit() } });
-    this.codePill.addEventListener('click', () => void this.shareRoom());
-    this.poolPill.addEventListener('click', () => this.requestDraw());
-    this.updatePill.addEventListener('click', () => void this.doUpdate());
-    const fit = h('button', { class: 'pill', text: '⌖', attrs: { type: 'button', 'aria-label': 'Ajustar câmera' }, on: { click: () => this.scene.fit() } });
-    const zoomIn = h('button', { class: 'pill zoom', text: '＋', attrs: { type: 'button', 'aria-label': 'Aproximar' }, on: { click: () => this.scene.zoomBy(0.75) } });
-    const zoomOut = h('button', { class: 'pill zoom', text: '－', attrs: { type: 'button', 'aria-label': 'Afastar' }, on: { click: () => this.scene.zoomBy(1.33) } });
-    const vis = h('button', { class: 'pill', text: 'Aa', attrs: { type: 'button', 'aria-label': 'Visual' }, on: { click: () => a11yPanel((a) => {
-          this.scene.setContrast(a.contrast);
-          this.scene.setSize(a.size);
-        }) } });
-    this.topbar.append(exit, this.codePill, this.poolPill, this.timerPill, h('span', { class: 'grow' }), this.updatePill, zoomOut, zoomIn, fit, vis);
+    this.menuBtn.addEventListener('click', () => this.openMenu());
+    this.topbar.append(this.menuBtn, this.timerPill);
+    const dock = (label: string, title: string, fn: () => void): HTMLButtonElement => h('button', { class: 'zoom', text: label, attrs: { type: 'button', 'aria-label': title, title }, on: { click: fn } });
+    this.zoomDock.append(dock('＋', 'Aproximar', () => this.scene.zoomBy(0.75)), dock('－', 'Afastar', () => this.scene.zoomBy(1.33)), dock('⌖', 'Ver a mesa toda', () => this.scene.fit()));
+  }
+
+  /** Menu do jogo: tudo o que não é jogada fica aqui, fora da tela de jogo. */
+  private openMenu(): void {
+    const v = this.view;
+    if (!v) return;
+    const me = this.me();
+    const online = this.b.mode === 'online';
+    const m = modal(h('div', { class: 'panel gamemenu' }));
+    const panel = m.el.firstElementChild as HTMLElement;
+    const item = (icon: string, label: string, fn: () => void): HTMLButtonElement =>
+      h('button', { class: 'mitem', attrs: { type: 'button' }, on: { click: () => { m.close(); fn(); } } }, h('span', { class: 'ic', text: icon }), h('span', { text: label }));
+    const hasNew = !!this.pwa?.update;
+    panel.append(
+      h('h2', { text: online ? `Sala ${v.code}` : 'Jogo' }),
+      h('p', { class: 'muted', text: v.phase === 'lobby' ? 'Aguardando começar' : `Pote: ${v.poolCount} pedras` }),
+      h(
+        'div',
+        { class: 'mgrid' },
+        ...(online ? [item('🔗', 'Convidar', () => void this.shareRoom())] : []),
+        ...(online ? [item(me?.cam ? '📷' : '🚫', me?.cam ? 'Câmera ligada' : 'Ligar câmera', () => void this.toggleMedia('cam'))] : []),
+        ...(online ? [item(me?.mic ? '🎤' : '🔇', me?.mic ? 'Microfone ligado' : 'Ligar microfone', () => void this.toggleMedia('mic'))] : []),
+        item('Aa', 'Letras e cores', () => a11yPanel((a) => { this.scene.setContrast(a.contrast); this.scene.setSize(a.size); })),
+        item('↻', hasNew ? 'Atualizar (nova versão)' : 'Atualizar', () => void this.doUpdate()),
+        item('✕', 'Sair do jogo', () => this.exit()),
+      ),
+      h('div', { class: 'row' }, btn('Fechar', () => m.close(), 'primary')),
+    );
   }
 
   private renderTop(): void {
-    const v = this.view!;
-    this.codePill.classList.toggle('hidden', this.b.mode === 'offline');
-    this.codePill.textContent = `Sala ${v.code}`;
-    this.poolPill.textContent = `Pote ${v.poolCount}`;
-    this.poolPill.classList.toggle('hidden', v.phase === 'lobby');
     this.tickUi();
   }
 
@@ -449,9 +463,7 @@ export class GameScreen {
   }
 
   private renderUpdate(): void {
-    const hasNew = !!this.pwa?.update;
-    this.updatePill.textContent = hasNew ? '↻ Nova versão' : '↻ Atualizar';
-    this.updatePill.classList.toggle('ready', hasNew);
+    this.menuBtn.classList.toggle('dot', !!this.pwa?.update);
   }
 
   private async shareRoom(): Promise<void> {
@@ -515,6 +527,12 @@ export class GameScreen {
     });
     const ctl = h('div', { class: 'ctl' }, cam, mic, mute, kick);
     const el = h('div', { class: 'pbox' }, frame, name, meta, ctl);
+    let closer = 0;
+    frame.addEventListener('click', () => {
+      el.classList.toggle('open');
+      window.clearTimeout(closer);
+      if (el.classList.contains('open')) closer = window.setTimeout(() => el.classList.remove('open'), 6000);
+    });
     this.boxLayer.append(el);
     box = { el, holder, video, name, meta, ring, cam, mic, mute, kick, avatarKey: '', muted: false };
     this.boxes.set(p.id, box);
@@ -578,38 +596,39 @@ export class GameScreen {
 
   // ---------- barra de ações ----------
   private buildActions(): void {
-    const mk = (label: string, title: string, fn: () => void, cls = ''): HTMLButtonElement => h('button', { class: `act ${cls}`.trim(), text: label, attrs: { type: 'button', title }, on: { click: fn } });
-    this.btnUndo = mk('↶', 'Desfazer', () => this.doUndo());
-    this.btnReset = mk('⟲', 'Recomeçar a jogada', () => this.doReset());
-    const sortNum = mk('1·2·3', 'Ordenar por número', () => this.draft && this.apply(sortRack(this.draft, 'num')));
-    const tidy = mk('▦', 'Arrumar a mesa em linhas', () => this.draft && this.myTurn() && this.apply(tidyTable(this.draft), 'Não coube na mesa.'));
-    const sortCol = mk('🎨', 'Ordenar por cor', () => this.draft && this.apply(sortRack(this.draft, 'color')));
-    const modeDefs: [Mode, string, string][] = [
-      ['tile', '✋', 'Mover pedra'],
-      ['set', '▭', 'Mover conjunto inteiro'],
-      ['split', '✂', 'Dividir conjunto (toque na pedra onde cortar)'],
-      ['pick', '☑', 'Marcar pedras do cavalete para jogar de uma vez'],
+    const mk = (icon: string, label: string, title: string, fn: () => void): HTMLButtonElement =>
+      h('button', { class: 'act2', attrs: { type: 'button', title, 'aria-label': title }, on: { click: fn } }, h('span', { class: 'ic', text: icon }), h('span', { class: 'tx', text: label }));
+    this.btnUndo = mk('↶', 'Desfazer', 'Desfazer o último movimento', () => this.doUndo());
+    this.btnReset = mk('⟲', 'Recomeçar', 'Recomeçar a jogada', () => this.doReset());
+    const sortNum = mk('123', 'Por número', 'Ordenar o cavalete por número', () => this.draft && this.apply(sortRack(this.draft, 'num')));
+    const sortCol = mk('🎨', 'Por cor', 'Ordenar o cavalete por cor', () => this.draft && this.apply(sortRack(this.draft, 'color')));
+    const tidy = mk('▦', 'Arrumar', 'Arrumar a mesa em linhas', () => this.draft && this.myTurn() && this.apply(tidyTable(this.draft), 'Não coube na mesa.'));
+    const modeDefs: [Mode, string, string, string][] = [
+      ['tile', '✋', 'Mover', 'Mover pedra (segure o dedo na pedra da mesa)'],
+      ['set', '▭', 'Conjunto', 'Mover conjunto inteiro'],
+      ['split', '✂', 'Cortar', 'Dividir conjunto (toque na pedra onde cortar)'],
+      ['pick', '☑', 'Marcar', 'Marcar pedras do cavalete para jogar de uma vez'],
     ];
-    this.btnCam = mk('📷', 'Mostrar minha imagem ao vivo no lugar da foto', () => void this.toggleMedia('cam'));
-    this.btnMic = mk('🎤', 'Microfone', () => void this.toggleMedia('mic'));
-    const modes = h('div', { class: 'modes' });
-    for (const [m, label, title] of modeDefs) {
-      const b = mk(label, title, () => {
+    const modes = h('div', { class: 'moderow' });
+    for (const [m, icon, label, title] of modeDefs) {
+      const b = mk(icon, label, title, () => {
         this.mode = m;
         if (m !== 'pick') this.selected.clear();
         this.sync();
         this.updateActions();
-      }, 'mode');
+      });
       this.modeBtns.set(m, b);
       modes.append(b);
     }
     this.btnPlaySel = h('button', { class: 'btn confirm hidden', attrs: { type: 'button' }, on: { click: () => this.playSelected() } });
     this.btnDraw = h('button', { class: 'btn draw', text: 'Comprar', attrs: { type: 'button' }, on: { click: () => this.requestDraw() } });
     this.btnConfirm = h('button', { class: 'btn confirm', text: 'Confirmar', attrs: { type: 'button' }, on: { click: () => this.doConfirm() } });
-    const left = h('div', { class: 'tools' }, this.btnUndo, this.btnReset, sortNum, sortCol, tidy, modes, ...(this.b.mode === 'online' ? [this.btnCam, this.btnMic] : []));
-    const right = h('div', { class: 'mainact' }, this.btnPlaySel, this.btnDraw, this.btnConfirm);
-    this.actionbar.append(left, right);
-    this.root.append(this.statusEl, this.turnBanner);
+    this.actionbar.append(
+      h('div', { class: 'mainrow' }, this.btnPlaySel, this.btnDraw, this.btnConfirm),
+      h('div', { class: 'toolrow' }, this.btnUndo, this.btnReset, sortNum, sortCol, tidy),
+      modes,
+    );
+    this.root.append(this.statusEl, this.turnBanner, this.zoomDock);
   }
 
   private updateActions(): void {
@@ -622,14 +641,9 @@ export class GameScreen {
     this.btnUndo.disabled = !mine || this.undo.length === 0;
     this.btnReset.disabled = !mine || !isDirty(d);
     this.btnDraw.disabled = !mine;
-    const me = this.me();
-    this.btnCam.classList.toggle('active', !!me?.cam);
-    this.btnMic.classList.toggle('active', !!me?.mic);
-    this.btnCam.textContent = me?.cam ? '📷' : '🚫';
-    this.btnMic.textContent = me?.mic ? '🎤' : '🔇';
     this.btnPlaySel.classList.toggle('hidden', !mine || this.mode !== 'pick' || this.selected.size < 3);
     this.btnPlaySel.textContent = `Jogar marcadas (${this.selected.size})`;
-    this.btnDraw.textContent = v.poolCount === 0 ? 'Passar' : 'Comprar';
+    this.btnDraw.textContent = v.poolCount === 0 ? 'Passar' : `Comprar (${v.poolCount})`;
     const st = draftStatus(d);
     const dirty = isDirty(d);
     this.btnConfirm.disabled = !mine || !st.check.ok;

@@ -8,9 +8,9 @@ export const TILE_H = 0.34;
 export const CELL_W = 1.1;
 export const CELL_D = 1.55;
 
-export const TILE_COLORS = ['#1b1b22', '#1f63c9', '#d12b2b', '#e58a1c'];
+export const TILE_COLORS = ['#17171c', '#0f52d6', '#d3202b', '#ee8700'];
 /** alto contraste: quatro cores bem separadas (e cada uma tem um símbolo próprio) */
-export const HC_COLORS = ['#000000', '#0038ff', '#e00000', '#ff8a00'];
+export const HC_COLORS = ['#000000', '#0033e6', '#e00000', '#ff7a00'];
 
 let highContrast = false;
 export const setHighContrast = (on: boolean): void => {
@@ -82,39 +82,6 @@ function drawShape(c: CanvasRenderingContext2D, kind: number, cx: number, cy: nu
   c.fill();
 }
 
-/** Face de alto contraste: fundo branco, moldura e número grandes na cor, símbolo cheio embaixo. */
-function drawHighContrast(c: CanvasRenderingContext2D, w: number, h: number, id: number): void {
-  c.fillStyle = '#ffffff';
-  c.fillRect(0, 0, w, h);
-  if (isJoker(id)) {
-    c.lineWidth = 16;
-    c.strokeStyle = '#000';
-    roundRect(c, 12, 12, w - 24, h - 24, 24);
-    c.stroke();
-    c.fillStyle = '#000';
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.font = '900 150px Arial, Helvetica, sans-serif';
-    c.fillText('★', w / 2, h * 0.38);
-    c.font = '900 56px Arial, Helvetica, sans-serif';
-    c.fillText('CORINGA', w / 2, h * 0.74);
-    return;
-  }
-  const color = HC_COLORS[tileColor(id)]!;
-  const n = tileNum(id);
-  c.lineWidth = 18;
-  c.strokeStyle = color;
-  roundRect(c, 12, 12, w - 24, h - 24, 24);
-  c.stroke();
-  c.fillStyle = color;
-  c.textAlign = 'center';
-  c.textBaseline = 'middle';
-  c.font = `900 ${n >= 10 ? 150 : 215}px Arial Black, Arial, Helvetica, sans-serif`;
-  c.fillText(String(n), w / 2, h * 0.4);
-  if (n === 6 || n === 9) c.fillRect(w / 2 - 50, h * 0.4 + 92, 100, 11);
-  drawShape(c, tileColor(id), w / 2, h * 0.8, 40);
-}
-
 /** Textura da face (número colorido + anel, ou coringa), desenhada por código. */
 export function faceTexture(id: number, maxAniso = 4): THREE.CanvasTexture {
   const key = `${highContrast ? 'h' : 'n'}${isJoker(id) ? -1 : tileColor(id) * 13 + tileNum(id)}`;
@@ -136,23 +103,32 @@ export function faceTexture(id: number, maxAniso = 4): THREE.CanvasTexture {
   c.strokeStyle = 'rgba(120,95,50,0.28)';
   roundRect(c, 10, 10, w - 20, h - 20, 22);
   c.stroke();
-  if (highContrast) {
-    drawHighContrast(c, w, h, id);
-  } else if (isJoker(id)) {
+  if (isJoker(id)) {
     drawJoker(c, w, h);
   } else {
-    const color = TILE_COLORS[tileColor(id)]!;
+    const palette = highContrast ? HC_COLORS : TILE_COLORS;
+    const color = palette[tileColor(id)]!;
     const n = tileNum(id);
-    c.fillStyle = color;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.font = `800 ${n >= 10 ? 148 : 190}px Georgia, "Times New Roman", serif`;
-    c.fillText(String(n), w / 2, h * 0.44);
-    c.lineWidth = 13;
+    c.font = `900 ${n >= 10 ? 158 : 206}px Georgia, "Times New Roman", serif`;
+    // relevo: sombra clara embaixo, número cheio por cima
+    c.fillStyle = 'rgba(255,255,255,0.9)';
+    c.fillText(String(n), w / 2 + 2, h * 0.43 + 4);
+    c.fillStyle = color;
+    c.strokeStyle = color;
+    c.lineJoin = 'round';
+    c.lineWidth = highContrast ? 10 : 6;
+    c.strokeText(String(n), w / 2, h * 0.43);
+    c.fillText(String(n), w / 2, h * 0.43);
+    if (n === 6 || n === 9) c.fillRect(w / 2 - 38, h * 0.43 + 92, 76, 8);
+    // anel com o símbolo da cor dentro (● ▲ ■ ◆): ajuda quem não distingue bem as cores
+    c.lineWidth = highContrast ? 15 : 11;
     c.strokeStyle = color;
     c.beginPath();
-    c.arc(w / 2, h * 0.81, 27, 0, Math.PI * 2);
+    c.arc(w / 2, h * 0.83, 33, 0, Math.PI * 2);
     c.stroke();
+    drawShape(c, tileColor(id), w / 2, h * 0.83, 17);
   }
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;

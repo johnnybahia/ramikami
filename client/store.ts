@@ -76,9 +76,9 @@ export function saveOfflineSettings(s: OfflineSettings): void {
   }
 }
 
-const A11Y_KEY = 'ramikami_a11y_v1';
+const A11Y_KEY = 'ramikami_a11y_v2';
 export interface A11y {
-  /** alto contraste: cores bem distintas + símbolo por cor + 6 e 9 sublinhados */
+  /** alto contraste: cores mais fortes e traços mais grossos nas pedras */
   contrast: boolean;
   /** tamanho da interface: 0 normal, 1 grande, 2 extra grande */
   size: 0 | 1 | 2;
@@ -88,10 +88,10 @@ let a11y: A11y | null = null;
 
 export function loadA11y(): A11y {
   if (a11y) return a11y;
-  a11y = { contrast: true, size: 0 };
+  a11y = { contrast: false, size: 0 };
   try {
     const p = JSON.parse(localStorage.getItem(A11Y_KEY) ?? 'null') as Partial<A11y> | null;
-    if (p) a11y = { contrast: p.contrast !== false, size: p.size === 1 || p.size === 2 ? p.size : 0 };
+    if (p) a11y = { contrast: p.contrast === true, size: p.size === 1 || p.size === 2 ? p.size : 0 };
   } catch {
     /* sem armazenamento: usa o padrão */
   }
