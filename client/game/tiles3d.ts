@@ -153,6 +153,10 @@ export class Tile {
   present = false;
   /** pedra em arrasto: segue o ponteiro sem suavização */
   dragging = false;
+  /** espera (s) antes de começar a andar: jogadas dos outros entram pedra por pedra */
+  delay = 0;
+  /** velocidade da suavização (padrão 16; menor = mais lento) */
+  speed = 16;
 
   constructor(
     readonly id: number,
@@ -192,12 +196,19 @@ export class Tile {
       g.position.copy(this.target);
       return true;
     }
-    const k = 1 - Math.exp(-dt * 16);
+    if (this.delay > 0) {
+      this.delay -= dt;
+      if (this.delay <= 0) g.visible = true;
+      return true;
+    }
+    const k = 1 - Math.exp(-dt * this.speed);
     g.position.lerp(this.target, k);
     g.rotation.y += (this.targetRotY - g.rotation.y) * k;
     const s = g.scale.x + (this.targetScale - g.scale.x) * k;
     g.scale.setScalar(s);
-    return g.position.distanceToSquared(this.target) > 1e-5 || Math.abs(s - this.targetScale) > 1e-3 || Math.abs(this.targetRotY - g.rotation.y) > 1e-3;
+    const moving = g.position.distanceToSquared(this.target) > 1e-5 || Math.abs(s - this.targetScale) > 1e-3 || Math.abs(this.targetRotY - g.rotation.y) > 1e-3;
+    if (!moving) this.speed = 16;
+    return moving;
   }
 }
 

@@ -69,6 +69,8 @@ export class GameScreen {
   private undo: Draft[] = [];
   /** última jogada completa e válida do rascunho: é o que fica na mesa se o tempo acabar */
   private checkpoint: SetState[] | null = null;
+  /** a próxima atualização da cena vem de uma jogada de outro jogador: anima devagar */
+  private slowFlag = false;
   private selected = new Set<number>();
   private botLevel: BotLevel = 'normal';
   private btnPlaySel!: HTMLButtonElement;
@@ -236,6 +238,7 @@ export class GameScreen {
     const prev = this.view;
     this.view = v;
     this.receivedAt = performance.now();
+    if (prev && prev.phase === 'playing' && prev.turnId && prev.turnId !== v.you && v.turnNo > prev.turnNo && JSON.stringify(v.table) !== JSON.stringify(prev.table)) this.slowFlag = true;
     const sig = `${v.phase}|${v.turnNo}|${JSON.stringify(v.table)}|${v.rack.slice().sort((a, b) => a - b).join(',')}`;
     if (sig !== this.sig) {
       this.sig = sig;
@@ -403,7 +406,9 @@ export class GameScreen {
       mode: this.mode,
       poolCount: v.poolCount,
       selected: this.selected,
+      slow: this.slowFlag,
     });
+    this.slowFlag = false;
     this.layoutBars();
   }
 

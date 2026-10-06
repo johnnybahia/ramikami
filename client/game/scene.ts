@@ -22,6 +22,8 @@ export interface SceneState {
   mode: Mode;
   poolCount: number;
   selected: Set<number>;
+  /** a mesa mudou por jogada de outro jogador: as pedras entram uma a uma, devagar */
+  slow?: boolean;
 }
 
 export interface SceneHandlers {
@@ -73,6 +75,7 @@ export class TableScene {
   private lastTap: { setId: number; t: number } | null = null;
   private aniso = 4;
   private sizeF = 1;
+  private slowNext = false;
   private felt!: THREE.Mesh;
   private offSkin: () => void = () => {};
   /** conjuntos onde a pedra arrastada encaixa (brilham em verde) */
@@ -364,7 +367,9 @@ export class TableScene {
     this.state = s;
     this.poolGroup.visible = s.poolCount > 0;
     this.layoutRack(s.rack.length);
+    this.slowNext = !!s.slow;
     this.syncTiles();
+    this.slowNext = false;
     if (!this.fitted && s.table.length > 0) this.fitNow();
     else if (s.table.length > 0 && !this.it) this.followTable();
     this.dirty = true;
@@ -408,9 +413,15 @@ export class TableScene {
     for (const set of s.table) set.tiles.forEach((id, index) => where.set(id, { set, index }));
     const rackIdx = new Map<number, number>();
     s.rack.forEach((id, i) => rackIdx.set(id, i));
+    // jogada de outro jogador: as pedras novas entram uma por uma (devagar), vindas de cima
+    const slow = this.slowNext;
+    const order = new Map<number, number>();
+    if (slow) for (const set of s.table) for (const id of set.tiles) if (!this.tiles[id]!.present) order.set(id, order.size);
+    const gap = Math.min(0.7, 6 / Math.max(1, order.size));
     const dragId = this.it && this.it.type === 'tile' && this.it.active ? this.it.id : -1;
     const setDrag = this.it && this.it.type === 'set' && this.it.active ? this.it : null;
 
+    const oldTarget = new THREE.Vector3();
     for (const t of this.tiles) {
       let region: Region | null = null;
       const ri = rackIdx.get(t.id);
@@ -421,6 +432,7 @@ export class TableScene {
         t.targetRotY = 0;
       } else if (w) {
         region = 'board';
+        if (slow && t.present) oldTarget.copy(t.target);
         const lift = setDrag && setDrag.setId === w.set.id ? 0.5 : 0;
         const p = this.boardPos(w.set.x + (setDrag && setDrag.setId === w.set.id ? setDrag.dx : 0), w.index, w.set.z + (setDrag && setDrag.setId === w.set.id ? setDrag.dz : 0), lift);
         t.target.copy(p);
@@ -439,12 +451,20 @@ export class TableScene {
         t.group.visible = true;
         t.group.position.copy(t.target);
         if (!t.present && region === 'board') t.group.position.y += 5;
+        if (slow && !t.present && region === 'board') {
+          t.group.visible = false;
+          t.delay = (order.get(t.id) ?? 0) * gap + 0.3;
+          t.speed = 4;
+          t.group.position.set(t.target.x, 6, -BOARD_D / 2 - 7);
+        }
         if (region === 'rack') t.group.scale.setScalar(0.35);
         else t.group.scale.setScalar(1);
         t.present = true;
         this.tileScene[t.id] = region;
       }
       t.dragging = false;
+      // pedras que já estavam na mesa e mudaram de lugar (rearranjo, empurrão) deslizam devagar
+      if (slow && region === 'board' && prev === 'board' && oldTarget.distanceToSquared(t.target) > 0.01) t.speed = 3.2;
       // cores de estado do conjunto
       let tint = 0;
       let k = 0;
