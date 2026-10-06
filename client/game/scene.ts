@@ -5,7 +5,7 @@ import { TILE_COUNT } from '../../shared/tiles';
 import { setHighContrast } from './tiles3d';
 import { acceptingSets, resolveBoardDrop, suggestDrop, tableWithoutTile } from './draft';
 import { CELL_D, CELL_W, TILE_D, TILE_H, TILE_W, Tile, woodTexture } from './tiles3d';
-import { skinById, skinTexture, type SkinId } from './skins';
+import { onSkinChange, skinById, skinTexture, type SkinId } from './skins';
 
 export const BOARD_W = COLS * CELL_W;
 export const BOARD_D = ROWS * CELL_D;
@@ -74,6 +74,7 @@ export class TableScene {
   private aniso = 4;
   private sizeF = 1;
   private felt!: THREE.Mesh;
+  private offSkin: () => void = () => {};
   /** conjuntos onde a pedra arrastada encaixa (brilham em verde) */
   private hintSets = new Set<number>();
   private hintFor = -1;
@@ -139,6 +140,7 @@ export class TableScene {
     const feltD = BOARD_D + 8;
     const felt = new THREE.Mesh(new THREE.PlaneGeometry(feltW, feltD), new THREE.MeshStandardMaterial({ map: skinTexture('verde', 4), roughness: 1, metalness: 0 }));
     this.felt = felt;
+    this.offSkin = onSkinChange(() => (this.dirty = true));
     felt.rotation.x = -Math.PI / 2;
     felt.receiveShadow = true;
     s.add(felt);
@@ -839,6 +841,7 @@ export class TableScene {
   dispose(): void {
     this.disposed = true;
     cancelAnimationFrame(this.rafId);
+    this.offSkin();
     this.ro.disconnect();
     document.removeEventListener('visibilitychange', this.onVis);
     this.canvas.remove();

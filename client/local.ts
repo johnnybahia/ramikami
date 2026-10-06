@@ -1,5 +1,6 @@
 import type { Backend, BackendEvents } from './backend';
 import { noopEvents } from './backend';
+import { BOT_TURN_SECONDS } from '../shared/protocol';
 import { LEVEL_CFG, botMove, personaOfBotId, pickBots, thinkDelayMs } from '../shared/bot';
 import { createGame, currentPlayer, drawTurn, playTurn, salvagePlay, type GameState } from '../shared/game';
 import { mulberry32 } from '../shared/tiles';
@@ -88,7 +89,7 @@ export class LocalBackend implements Backend {
       this.turnEndsAt = null;
       this.events.onView(this.view());
       const persona = personaOfBotId(cur.id) ?? LEVEL_CFG[this.cfg.level];
-      this.timer = window.setTimeout(() => this.botTurn(), thinkDelayMs(persona, this.cfg.turnSeconds));
+      this.timer = window.setTimeout(() => this.botTurn(), thinkDelayMs(persona, BOT_TURN_SECONDS));
       return;
     }
     this.turnEndsAt = this.cfg.turnSeconds ? Date.now() + this.cfg.turnSeconds * 1000 : null;

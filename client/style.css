@@ -249,3 +249,5 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .skin { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px; border-radius: 12px; border: 2px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--text); font-size: 0.78rem; font-weight: 700; cursor: pointer; }
 .skin .sw { width: 100%; height: 34px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.25); }
 .skin.active { border-color: var(--gold); background: rgba(231, 194, 106, 0.14); }
+.logorow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.logorow .hint { flex-basis: 100%; }

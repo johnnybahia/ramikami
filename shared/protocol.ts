@@ -5,7 +5,10 @@ import type { BotLevel } from './bot';
 export type { BotLevel };
 
 export const MAX_ROOM_PLAYERS = 4;
-export const TURN_SECONDS_OPTIONS = [30, 60] as const;
+/** tempo por jogada dos HUMANOS em segundos (0 = sem limite). Bots sempre usam BOT_TURN_SECONDS. */
+export const TURN_SECONDS_OPTIONS = [60, 30, 0] as const;
+export const BOT_TURN_SECONDS = 30;
+export const turnLabel = (s: number): string => (s === 0 ? 'Sem limite' : `${s}s`);
 export type TurnSeconds = (typeof TURN_SECONDS_OPTIONS)[number];
 /** Ordem de preferência ao sentar: com 2 jogadores ficam frente a frente. */
 export const SEAT_PREFERENCE = [0, 2, 1, 3] as const;

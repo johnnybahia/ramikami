@@ -45,7 +45,7 @@ export default {
 
     if (url.pathname === '/api/rooms' && req.method === 'POST') {
       const body = (await req.json().catch(() => ({}))) as { turnSeconds?: number; isPublic?: boolean };
-      const turnSeconds = (TURN_SECONDS_OPTIONS as readonly number[]).includes(body.turnSeconds ?? 0) ? body.turnSeconds! : 60;
+      const turnSeconds = typeof body.turnSeconds === 'number' && (TURN_SECONDS_OPTIONS as readonly number[]).includes(body.turnSeconds) ? body.turnSeconds : 60;
       for (let i = 0; i < 8; i++) {
         const code = newCode();
         const r = await env.ROOM.get(env.ROOM.idFromName(code)).fetch('https://room/init', { method: 'POST', body: JSON.stringify({ code, turnSeconds, isPublic: !!body.isPublic }) });

@@ -4,6 +4,7 @@ import type { SetState } from '../../shared/layout';
 import {
   MAX_PHOTO_CHARS,
   BEST_OF_OPTIONS,
+  BOT_TURN_SECONDS,
   CONFIRM_SECONDS,
   MAX_ROOM_PLAYERS,
   NAME_MAX,
@@ -306,7 +307,7 @@ export class GameRoom implements DurableObject {
       }
       case 'settings': {
         if (me !== s.hostId || s.phase !== 'lobby') return;
-        if (msg.turnSeconds && (TURN_SECONDS_OPTIONS as readonly number[]).includes(msg.turnSeconds)) s.turnSeconds = msg.turnSeconds;
+        if (typeof msg.turnSeconds === 'number' && (TURN_SECONDS_OPTIONS as readonly number[]).includes(msg.turnSeconds)) s.turnSeconds = msg.turnSeconds;
         if (msg.bestOf && (BEST_OF_OPTIONS as readonly number[]).includes(msg.bestOf)) s.bestOf = msg.bestOf;
         await this.persist();
         this.broadcast();
@@ -495,9 +496,9 @@ export class GameRoom implements DurableObject {
     const gp = s.game?.players.find((p) => p.id === id);
     if (gp) gp.connected = false;
     // era a vez de quem caiu: o prazo encurta para ele não travar a mesa
-    if (s.phase === 'playing' && s.game && currentPlayer(s.game).id === id && s.turnEndsAt) {
+    if (s.phase === 'playing' && s.game && currentPlayer(s.game).id === id) {
       const limit = Date.now() + OFFLINE_TURN_SECONDS * 1000;
-      if (s.turnEndsAt > limit) {
+      if (!s.turnEndsAt || s.turnEndsAt > limit) {
         s.turnEndsAt = limit;
         await this.ctx.storage.setAlarm(limit);
       }
@@ -548,8 +549,8 @@ export class GameRoom implements DurableObject {
       const cur = currentPlayer(g);
       if (cur.isBot) {
         // o bot "pensa" uma parte do tempo do turno; o relógio mostrado é o do turno inteiro, como para humanos
-        s.botAt = Date.now() + thinkDelayMs(this.botCfg(cur.id), s.turnSeconds);
-        s.turnEndsAt = Date.now() + s.turnSeconds * 1000;
+        s.botAt = Date.now() + thinkDelayMs(this.botCfg(cur.id), BOT_TURN_SECONDS);
+        s.turnEndsAt = Date.now() + BOT_TURN_SECONDS * 1000;
         await this.ctx.storage.setAlarm(s.botAt);
         await this.listing();
         await this.persist();
@@ -557,9 +558,15 @@ export class GameRoom implements DurableObject {
         return;
       }
       s.botAt = null;
-      const secs = cur.connected ? s.turnSeconds : Math.min(s.turnSeconds, OFFLINE_TURN_SECONDS);
-      s.turnEndsAt = Date.now() + secs * 1000;
-      await this.ctx.storage.setAlarm(s.turnEndsAt);
+      const secs = cur.connected ? s.turnSeconds : s.turnSeconds === 0 ? OFFLINE_TURN_SECONDS : Math.min(s.turnSeconds, OFFLINE_TURN_SECONDS);
+      if (secs === 0) {
+        // sem limite de tempo para humanos conectados
+        s.turnEndsAt = null;
+        await this.ctx.storage.deleteAlarm();
+      } else {
+        s.turnEndsAt = Date.now() + secs * 1000;
+        await this.ctx.storage.setAlarm(s.turnEndsAt);
+      }
       await this.listing();
     }
     await this.persist();
@@ -615,8 +622,9 @@ export class GameRoom implements DurableObject {
       }
       return this.botTurn();
     }
-    if (Date.now() < (s.turnEndsAt ?? 0) - 100) {
-      await this.ctx.storage.setAlarm(s.turnEndsAt!);
+    if (s.turnEndsAt === null) return; // sem limite de tempo: nada a fazer
+    if (Date.now() < s.turnEndsAt - 100) {
+      await this.ctx.storage.setAlarm(s.turnEndsAt);
       return;
     }
     const cur = currentPlayer(s.game);

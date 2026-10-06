@@ -26,7 +26,7 @@ import { BOT_LEVELS, LEVEL_CFG, MAX_BOTS, personaOfBotId, type BotLevel } from '
 import { personaAvatar } from '../botAvatars';
 import { a11yPanel, modal } from './screens';
 import { relayout, type SetState } from '../../shared/layout';
-import { BEST_OF_OPTIONS, TURN_SECONDS_OPTIONS, type BestOf, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
+import { BEST_OF_OPTIONS, BOT_TURN_SECONDS, TURN_SECONDS_OPTIONS, turnLabel, type BestOf, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
 import { applyUpdate, checkForUpdate, onPwa, type PwaState } from '../pwa';
 import { avatarColor, loadA11y, type Profile } from '../store';
 import { avatarEl, btn, clear, h, toast } from './dom';
@@ -494,12 +494,12 @@ export class GameScreen {
       this.timerPill.classList.toggle('danger', remaining <= 10);
       if (remaining <= 5 && remaining > 0 && this.myTurn()) navigator.vibrate?.(20);
     }
-    const total = v.turnSeconds;
     for (const p of v.players) {
       const box = this.boxes.get(p.id);
       if (!box) continue;
       const active = v.phase === 'playing' && v.turnId === p.id;
-      box.el.style.setProperty('--p', active && remaining !== null ? String(Math.round((remaining / total) * 100)) : active ? '100' : '0');
+      const total = p.bot ? BOT_TURN_SECONDS : v.turnSeconds;
+      box.el.style.setProperty('--p', active && remaining !== null && total > 0 ? String(Math.min(100, Math.round((remaining / total) * 100))) : active ? '100' : '0');
     }
   }
 
@@ -718,7 +718,7 @@ export class GameScreen {
       seg.append(
         h('button', {
           class: `seg-btn${v.turnSeconds === s ? ' active' : ''}`,
-          text: `${s}s`,
+          text: turnLabel(s),
           attrs: { type: 'button', ...(host ? {} : { disabled: '' }) },
           on: { click: () => this.b.settings({ turnSeconds: s as TurnSeconds }) },
         }),
@@ -733,7 +733,7 @@ export class GameScreen {
       'div',
       { class: 'panel lobby' },
       h('h2', { text: `Sala ${v.code}` }),
-      h('p', { class: 'muted', text: `${v.players.length}/4 jogadores · tempo por jogada` }),
+      h('p', { class: 'muted', text: `${v.players.length}/4 jogadores · tempo por jogada dos humanos (bots sempre ${BOT_TURN_SECONDS}s)` }),
       seg,
       h('label', { class: 'lbl', text: 'Sessão: melhor de (todas as partidas são jogadas)' }),
       this.segment(BEST_OF_OPTIONS.map((n) => ({ value: n as BestOf, label: String(n) })), v.bestOf, (n) => host && this.b.settings({ bestOf: n })),

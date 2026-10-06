@@ -2,8 +2,8 @@ import { createRoom, getRanking, listRooms } from '../api';
 import { getPwa, installApp, applyUpdate, isIos, onPwa } from '../pwa';
 import { avatarColor, loadA11y, saveA11y, type A11y, loadOfflineSettings, newId, photoFromFile, saveOfflineSettings, saveProfile, type OfflineSettings, type Profile } from '../store';
 import { BOT_LEVELS, LEVEL_CFG } from '../../shared/bot';
-import { SKINS } from '../game/skins';
-import { NAME_MAX, TURN_SECONDS_OPTIONS, type TurnSeconds } from '../../shared/protocol';
+import { LOGO_SKINS, SKINS, clearUserLogo, getUserLogo, setUserLogo } from '../game/skins';
+import { NAME_MAX, TURN_SECONDS_OPTIONS, turnLabel, type TurnSeconds } from '../../shared/protocol';
 import { avatarEl, btn, clear, h, toast } from './dom';
 
 export interface MenuActions {
@@ -144,7 +144,7 @@ function offlinePanel(a: MenuActions): void {
       segmented([{ value: 1, label: '1' }, { value: 2, label: '2' }, { value: 3, label: '3' }] as const, cfg.bots, (v) => (cfg.bots = v)),
       h('label', { class: 'lbl', text: 'Nível dos bots' }),
       segmented(BOT_LEVELS.map((l) => ({ value: l, label: LEVEL_CFG[l].label })), cfg.level, (v) => (cfg.level = v)),
-      h('label', { class: 'lbl', text: 'Tempo por jogada' }),
+      h('label', { class: 'lbl', text: 'Tempo por jogada (bots sempre 30s)' }),
       segmented([{ value: 30, label: '30s' }, { value: 60, label: '60s' }, { value: 0, label: 'Sem limite' }] as const, cfg.turnSeconds, (v) => (cfg.turnSeconds = v)),
       h('div', { class: 'row' }, btn('Começar', () => { saveOfflineSettings(cfg); m.close(); a.startOffline(cfg); }, 'primary'), btn('Cancelar', () => m.close(), 'ghost')),
     ),
@@ -172,7 +172,7 @@ function onlinePanel(a: MenuActions): void {
     try {
       const rooms = await listRooms();
       if (rooms.length === 0) list.append(h('p', { class: 'muted', text: 'Nenhuma sala pública aberta agora.' }));
-      for (const r of rooms) list.append(h('button', { class: 'room', attrs: { type: 'button' }, on: { click: () => join(r.code) } }, h('b', { text: r.code }), h('span', { text: `${r.hostName} · ${r.count}/4 · ${r.turnSeconds}s` })));
+      for (const r of rooms) list.append(h('button', { class: 'room', attrs: { type: 'button' }, on: { click: () => join(r.code) } }, h('b', { text: r.code }), h('span', { text: `${r.hostName} · ${r.count}/4 · ${turnLabel(r.turnSeconds)}` })));
     } catch {
       list.append(h('p', { class: 'muted', text: 'Sem conexão com o servidor.' }));
     }
@@ -191,7 +191,7 @@ function onlinePanel(a: MenuActions): void {
   panel.append(
     h('h3', { text: 'Jogar online' }),
     h('label', { class: 'lbl', text: 'Criar sala — tempo por jogada' }),
-    segmented(TURN_SECONDS_OPTIONS.map((s) => ({ value: s, label: `${s}s` })), turn, (v) => (turn = v)),
+    segmented(TURN_SECONDS_OPTIONS.map((s) => ({ value: s, label: turnLabel(s) })), turn, (v) => (turn = v)),
     h('label', { class: 'check' }, h('input', { attrs: { type: 'checkbox', checked: '' }, on: { change: (e) => (isPublic = (e.target as HTMLInputElement).checked) } }), h('span', { text: 'Sala pública (aparece na lista)' })),
     btn('Criar sala', () => void create(), 'primary'),
     h('hr'),
@@ -260,6 +260,30 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
     onChange?.(loadA11y());
   });
   const skinPicker = h('div', { class: 'skins' });
+  const logoRow = h('div', { class: 'logorow' });
+  const drawLogoRow = (): void => {
+    clear(logoRow);
+    const id = loadA11y().skin;
+    if (!LOGO_SKINS.includes(id)) return;
+    const has = !!getUserLogo(id);
+    const pick = btn(has ? 'Trocar escudo' : 'Colocar escudo na mesa', () => {
+      const f = h('input', { attrs: { type: 'file', accept: 'image/*' } });
+      f.addEventListener('change', async () => {
+        const file = f.files?.[0];
+        if (!file) return;
+        try {
+          await setUserLogo(id, file);
+          toast('Escudo colocado na mesa.');
+          drawLogoRow();
+        } catch {
+          toast('Não consegui ler essa imagem.');
+        }
+      });
+      f.click();
+    }, 'small');
+    logoRow.append(pick, ...(has ? [btn('Remover', () => { clearUserLogo(id); drawLogoRow(); }, 'small ghost')] : []), h('p', { class: 'hint', text: 'A imagem fica só neste aparelho e aparece bem suave no centro da mesa.' }));
+  };
+  drawLogoRow();
   const drawSkins = (): void => {
     clear(skinPicker);
     for (const k of SKINS) {
@@ -275,6 +299,7 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
                 saveA11y({ ...loadA11y(), skin: k.id });
                 onChange?.(loadA11y());
                 drawSkins();
+                drawLogoRow();
               },
             },
           },
@@ -298,6 +323,7 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
       }),
       h('label', { class: 'lbl', text: 'Mesa' }),
       skinPicker,
+      logoRow,
       h('p', { class: 'hint', text: 'Na mesa: arraste para rolar, pince ou use ＋ − para aproximar, toque duas vezes num conjunto para ampliá-lo. Para mover uma pedra, segure o dedo nela até vibrar.' }),
       h('div', { class: 'row' }, btn('Pronto', () => m.close(), 'primary')),
     ),
