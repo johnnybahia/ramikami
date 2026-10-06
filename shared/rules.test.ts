@@ -4,7 +4,8 @@ import { createGame, drawTurn, playTurn, removePlayer, currentPlayer, salvagePla
 import { botMove, pickBots, PERSONAS } from './bot';
 import { solveTable } from './solver';
 import { mulberry32, handPoints } from './tiles';
-import { findCompactSpot, packRows, relayout, type SetState } from './layout';
+import { animCounts, findCompactSpot, packRows, relayout, type SetState } from './layout';
+import { animMsFor } from './protocol';
 
 // id = cor*26 + (num-1) (+13 para a segunda cópia). cor 0 preto, 1 azul, 2 vermelho, 3 laranja
 const T = (color: number, num: number, copy = 0) => color * 13 + (num - 1) + copy * 52;
@@ -327,5 +328,20 @@ describe('chatter', () => {
     const st = decideChatter(view([pl('h', false, 9), pl('b', true, 9)], 'h'), view([pl('h', false, 10), pl('b', true, 9)], 'b', { turnNo: 2 }), 2, () => 0)!;
     expect(st.kind).toBe('otherStreak');
     expect(decideChatter(view([pl('h', false, 9), pl('g', false, 9)], 'h'), view([pl('h', false, 10), pl('g', false, 9)], 'g', { turnNo: 2 }), 0, () => 0)).toBeNull();
+  });
+});
+
+describe('animação da jogada', () => {
+  const set = (id: number, tiles: number[], x: number, z: number): SetState => ({ id, tiles, x, z });
+  it('conta pedras novas e pedras que só mudaram de lugar', () => {
+    const prev = [set(1, [1, 2, 3], 5, 2), set(2, [10, 11, 12], 5, 4)];
+    const next = [set(1, [1, 2, 3], 5, 2), set(2, [10, 11, 12], 9, 4), set(3, [20, 21, 22], 5, 6)];
+    expect(animCounts(prev, next)).toEqual({ fresh: 3, moved: 3 });
+    expect(animCounts(prev, prev)).toEqual({ fresh: 0, moved: 0 });
+  });
+  it('mexer só de lugar também ganha tempo (o relógio do próximo não começa antes)', () => {
+    expect(animMsFor(0, 0)).toBe(0);
+    expect(animMsFor(0, 6)).toBeGreaterThan(animMsFor(0, 1));
+    expect(animMsFor(4, 8)).toBeGreaterThan(animMsFor(4, 0));
   });
 });

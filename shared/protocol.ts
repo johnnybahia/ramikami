@@ -12,7 +12,10 @@ export const BOT_TURN_SECONDS = 30;
  * Tempo que a tela leva para mostrar, pedra por pedra, uma jogada de `placed` pedras (animação lenta dos outros).
  * O servidor soma isso ao relógio de quem joga depois; o cliente espera esse tempo antes de liberar a vez.
  */
-export const animMsFor = (placed: number): number => (placed <= 0 ? 0 : Math.min(6000, 300 + placed * 700) + 1200);
+/** Cada pedra nova leva ANIM_NEW_MS para entrar na tela; cada pedra que só muda de lugar, ANIM_MOVE_MS (uma de cada vez). */
+export const ANIM_NEW_MS = 1100;
+export const ANIM_MOVE_MS = 700;
+export const animMsFor = (fresh: number, moved = 0): number => (fresh + moved <= 0 ? 0 : Math.min(24000, 300 + fresh * ANIM_NEW_MS + moved * ANIM_MOVE_MS) + 1500);
 export const turnLabel = (s: number): string => (s === 0 ? 'Sem limite' : `${s}s`);
 export type TurnSeconds = (typeof TURN_SECONDS_OPTIONS)[number];
 /** Ordem de preferência ao sentar: com 2 jogadores ficam frente a frente. */

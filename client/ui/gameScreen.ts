@@ -26,6 +26,7 @@ import { BOT_LEVELS, LEVEL_CFG, MAX_BOTS, personaOfBotId, type BotLevel } from '
 import { personaAvatar } from '../botAvatars';
 import { a11yPanel, modal } from './screens';
 import { relayout, type SetState } from '../../shared/layout';
+import { animCounts } from '../../shared/layout';
 import { BEST_OF_OPTIONS, BOT_TURN_SECONDS, animMsFor, TURN_SECONDS_OPTIONS, turnLabel, type BestOf, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
 import { applyUpdate, checkForUpdate, onPwa, type PwaState } from '../pwa';
 import { avatarColor, loadA11y, saveA11y, type Profile } from '../store';
@@ -263,11 +264,11 @@ export class GameScreen {
     this.receivedAt = performance.now();
     if (prev && prev.phase === 'playing' && prev.turnId && prev.turnId !== v.you && v.turnNo > prev.turnNo && JSON.stringify(v.table) !== JSON.stringify(prev.table)) {
       this.slowFlag = true;
-      const had = new Set(prev.table.flatMap((x) => x.tiles));
-      const fresh = v.table.reduce((n, x) => n + x.tiles.filter((t) => !had.has(t)).length, 0);
-      this.busyUntil = performance.now() + animMsFor(fresh);
+      const ac = animCounts(prev.table, v.table);
+      const ms = animMsFor(ac.fresh, ac.moved);
+      this.busyUntil = performance.now() + ms;
       window.clearTimeout(this.busyTimer);
-      this.busyTimer = window.setTimeout(() => this.afterBusy(), animMsFor(fresh) + 60);
+      this.busyTimer = window.setTimeout(() => this.afterBusy(), ms + 60);
     }
     if (prev && prev.phase === 'playing' && (v.turnNo > prev.turnNo || v.phase === 'ended')) this.botChatter(prev, v);
     const sig = `${v.phase}|${v.turnNo}|${JSON.stringify(v.table)}|${v.rack.slice().sort((a, b) => a - b).join(',')}`;

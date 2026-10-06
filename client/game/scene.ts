@@ -1,3 +1,4 @@
+import { ANIM_MOVE_MS, ANIM_NEW_MS } from '../../shared/protocol';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { COLS, ROWS, type SetState } from '../../shared/layout';
@@ -413,11 +414,29 @@ export class TableScene {
     for (const set of s.table) set.tiles.forEach((id, index) => where.set(id, { set, index }));
     const rackIdx = new Map<number, number>();
     s.rack.forEach((id, i) => rackIdx.set(id, i));
-    // jogada de outro jogador: as pedras novas entram uma por uma (devagar), vindas de cima
+    // jogada de outro jogador: as pedras novas entram uma por uma (devagar), vindas de cima, e as que só mudam de lugar
+    // deslizam também uma por uma, na ordem da mesa
     const slow = this.slowNext;
-    const order = new Map<number, number>();
-    if (slow) for (const set of s.table) for (const id of set.tiles) if (!this.tiles[id]!.present) order.set(id, order.size);
-    const gap = Math.min(0.7, 6 / Math.max(1, order.size));
+    const seq = new Map<number, { delay: number; fresh: boolean }>();
+    if (slow) {
+      let at = 0.3;
+      const sets = s.table.slice().sort((a, b) => a.z - b.z || a.x - b.x);
+      const probe = new THREE.Vector3();
+      for (const set of sets)
+        set.tiles.forEach((id, index) => {
+          const t = this.tiles[id]!;
+          if (!t.present) {
+            seq.set(id, { delay: at, fresh: true });
+            at += ANIM_NEW_MS / 1000;
+          } else {
+            probe.copy(this.boardPos(set.x, index, set.z, 0));
+            if (this.tileScene[id] === 'board' && t.target.distanceToSquared(probe) > 0.01) {
+              seq.set(id, { delay: at, fresh: false });
+              at += ANIM_MOVE_MS / 1000;
+            }
+          }
+        });
+    }
     const dragId = this.it && this.it.type === 'tile' && this.it.active ? this.it.id : -1;
     const setDrag = this.it && this.it.type === 'set' && this.it.active ? this.it : null;
 
@@ -454,8 +473,8 @@ export class TableScene {
         if (!t.present && region === 'board') t.group.position.y += 5;
         if (slow && !t.present && region === 'board') {
           t.group.visible = false;
-          t.delay = (order.get(t.id) ?? 0) * gap + 0.3;
-          t.speed = 4;
+          t.delay = seq.get(t.id)?.delay ?? 0.3;
+          t.speed = 2.6;
           t.group.position.set(t.target.x, 6, -BOARD_D / 2 - 7);
         }
         if (region === 'rack') t.group.scale.setScalar(0.35);
@@ -465,7 +484,10 @@ export class TableScene {
       }
       t.dragging = false;
       // pedras que já estavam na mesa e mudaram de lugar (rearranjo, empurrão) deslizam devagar
-      if (slow && region === 'board' && prev === 'board' && oldTarget.distanceToSquared(t.target) > 0.01) t.speed = 3.2;
+      if (slow && region === 'board' && prev === 'board' && oldTarget.distanceToSquared(t.target) > 0.01) {
+        t.delay = seq.get(t.id)?.delay ?? 0;
+        t.speed = 2.2;
+      }
       // cores de estado do conjunto
       let tint = 0;
       let k = 0;

@@ -158,3 +158,18 @@ export function relayout(input: readonly SetState[]): SetState[] {
   }
   return placed;
 }
+
+/** Quantas pedras são novas na mesa e quantas já estavam mas mudaram de lugar (para dimensionar a animação). */
+export function animCounts(prev: readonly SetState[], next: readonly SetState[]): { fresh: number; moved: number } {
+  const was = new Map<number, string>();
+  for (const s of prev) s.tiles.forEach((t, i) => was.set(t, `${s.x + i},${s.z}`));
+  let fresh = 0;
+  let moved = 0;
+  for (const s of next)
+    s.tiles.forEach((t, i) => {
+      const old = was.get(t);
+      if (old === undefined) fresh++;
+      else if (old !== `${s.x + i},${s.z}`) moved++;
+    });
+  return { fresh, moved };
+}
