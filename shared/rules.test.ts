@@ -288,12 +288,19 @@ describe('grade: packRows e relayout', () => {
   });
 });
 
-import { CHATTER, pickChatter } from './chatter';
+import { CHATTER, CHATTER_NAMED, pickChatter } from './chatter';
 describe('chatter', () => {
   it('tem ~50 frases e sorteia de cada tipo', () => {
     const all = Object.values(CHATTER).flat();
     expect(all.length).toBeGreaterThanOrEqual(50);
     expect(new Set(all).size).toBe(all.length);
     for (const k of Object.keys(CHATTER) as (keyof typeof CHATTER)[]) expect(CHATTER[k]).toContain(pickChatter(k));
+  });
+  it('frases dirigidas usam o nome do jogador', () => {
+    for (const k of Object.keys(CHATTER_NAMED) as (keyof typeof CHATTER_NAMED)[]) {
+      expect(CHATTER_NAMED[k].every((t) => t.includes('{nome}'))).toBe(true);
+      expect(pickChatter(k, () => 0, 'Johnny')).toContain('Johnny');
+      expect(pickChatter(k, () => 0.99, 'Johnny')).not.toContain('{nome}');
+    }
   });
 });

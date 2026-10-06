@@ -307,20 +307,25 @@ export class GameScreen {
     const delta = mover.rackCount - now.rackCount;
     const bots = v.players.filter((p) => p.bot && !p.left);
     if (bots.length === 0 || Math.random() > 0.5) return;
+    const humans = v.players.filter((p) => !p.bot && !p.left);
+    const pickOne = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)]!;
     let speaker = mover;
+    let target: string | undefined;
     let kind: ChatKind;
     if (mover.bot) {
       kind = delta > 0 ? (delta >= 5 ? 'bigPlay' : 'ownPlay') : 'ownDraw';
       if (kind === 'bigPlay') {
         const others = bots.filter((b) => b.id !== mover.id);
-        if (others.length > 0) speaker = others[Math.floor(Math.random() * others.length)]!;
+        if (others.length > 0) speaker = pickOne(others);
         else kind = 'ownPlay';
       }
+      if (humans.length > 0) target = pickOne(humans).name;
     } else {
-      speaker = bots[Math.floor(Math.random() * bots.length)]!;
+      speaker = pickOne(bots);
       kind = delta >= 5 ? 'bigPlay' : delta > 0 ? 'otherPlay' : 'otherDraw';
+      target = mover.name;
     }
-    const text = `${speaker.name}: ${pickChatter(kind)}`;
+    const text = `${speaker.name}: ${pickChatter(kind, Math.random, target)}`;
     window.clearTimeout(this.chatTimer);
     this.chatTimer = window.setTimeout(() => {
       this.chatBubble.textContent = text;

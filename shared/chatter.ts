@@ -69,7 +69,51 @@ export const CHATTER: Record<ChatKind, readonly string[]> = {
   ],
 };
 
-export function pickChatter(kind: ChatKind, rnd: () => number = Math.random): string {
+// Frases dirigidas a um jogador humano: {nome} vira o nome dele.
+export const CHATTER_NAMED: Record<ChatKind, readonly string[]> = {
+  ownPlay: [
+    '{nome}, olha e aprende.',
+    '{nome}, essa foi para você ver.',
+    'Prepare o cavalete, {nome}, que eu estou chegando.',
+    '{nome}, não vá dormir agora.',
+    'Tenta me alcançar, {nome}!',
+  ],
+  ownDraw: [
+    '{nome}, não ri não, eu volto.',
+    'Se eu fosse você, {nome}, não comemorava ainda.',
+    '{nome}, me empresta um coringa?',
+    'Hoje não foi meu dia, {nome}.',
+  ],
+  bigPlay: [
+    'Isso, {nome}! Assim você me destrói!',
+    '{nome}, que jogada, hein!',
+    'Peraí, {nome}, devagar com a mesa!',
+    'Quem diria, {nome}, jogando assim.',
+    '{nome} está voando hoje!',
+  ],
+  otherPlay: [
+    'Boa, {nome}!',
+    '{nome}, essa eu não vi vindo.',
+    'Tá esperto hoje, {nome}.',
+    'Foi sorte, {nome}, confessa.',
+    'Gostei, {nome}, vou copiar.',
+    '{nome}, cuidado que eu estou de olho.',
+  ],
+  otherDraw: [
+    'Que pena, {nome}, nada serviu.',
+    'Calma, {nome}, a próxima vem.',
+    '{nome} comprando… já é um começo.',
+    'Respira, {nome}, ainda tem jogo.',
+    'Ótimo para mim, {nome}. Obrigado!',
+  ],
+};
+
+/** Com `target` (nome de um humano), na maior parte das vezes sorteia uma frase dirigida a ele. */
+export function pickChatter(kind: ChatKind, rnd: () => number = Math.random, target?: string): string {
+  if (target && rnd() < 0.7) {
+    const named = CHATTER_NAMED[kind];
+    return named[Math.floor(rnd() * named.length)]!.replace('{nome}', target);
+  }
   const list = CHATTER[kind];
   return list[Math.floor(rnd() * list.length)]!;
 }
