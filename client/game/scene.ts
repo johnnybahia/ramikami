@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { COLS, ROWS, type SetState } from '../../shared/layout';
 import { TILE_COUNT } from '../../shared/tiles';
 import { setHighContrast } from './tiles3d';
-import { acceptingSets, newSetSpot, resolveBoardDrop, suggestDrop, tableWithoutTile } from './draft';
+import { acceptingSets, newSetSpot, resolveBoardDrop, tableWithoutTile } from './draft';
 import { CELL_D, CELL_W, TILE_D, TILE_H, TILE_W, Tile, woodTexture } from './tiles3d';
 import { onSkinChange, skinById, skinTexture, type SkinId } from './skins';
 
@@ -812,8 +812,7 @@ export class TableScene {
         this.hintSets = new Set(acceptingSets(this.state.table, id).map((a) => a.setId));
         this.syncTiles();
       }
-      let act = resolveBoardDrop(tableWithoutTile(this.state.table, id), cx, cz);
-      if (act.kind === 'new') act = suggestDrop(this.state.table, id, cx, cz) ?? act;
+      const act = resolveBoardDrop(tableWithoutTile(this.state.table, id), cx, cz);
       if (act.kind === 'insert') {
         const set = tableWithoutTile(this.state.table, id).find((s) => s.id === act.setId)!;
         const edge = this.boardPos(set.x, act.index, set.z);
