@@ -22,7 +22,7 @@ import {
 } from '../game/draft';
 import { analyzeSet, arrangeTiles } from '../../shared/rules';
 import { isJoker } from '../../shared/tiles';
-import { pickChatter, type ChatKind } from '../../shared/chatter';
+import { decideChatter, pickChatter } from '../../shared/chatter';
 import { BOT_LEVELS, LEVEL_CFG, MAX_BOTS, personaOfBotId, type BotLevel } from '../../shared/bot';
 import { personaAvatar } from '../botAvatars';
 import { a11yPanel, modal } from './screens';
@@ -80,6 +80,8 @@ export class GameScreen {
   private btnPlaySel!: HTMLButtonElement;
   private chatBubble = h('div', { class: 'chat-bubble hidden' });
   private chatTimer = 0;
+  private drawStreak = new Map<string, number>();
+  private lastChatTurn = -9;
   private turnBanner = h('div', { class: 'turn-banner hidden', text: '⚡ SUA VEZ! Toque para começar' });
   private nagTimer = 0;
   private autoMediaDone = false;
@@ -269,7 +271,7 @@ export class GameScreen {
       window.clearTimeout(this.busyTimer);
       this.busyTimer = window.setTimeout(() => this.afterBusy(), animMsFor(fresh) + 60);
     }
-    if (prev && prev.phase === 'playing' && v.turnNo > prev.turnNo) this.botChatter(prev, v);
+    if (prev && prev.phase === 'playing' && (v.turnNo > prev.turnNo || v.phase === 'ended')) this.botChatter(prev, v);
     const sig = `${v.phase}|${v.turnNo}|${JSON.stringify(v.table)}|${v.rack.slice().sort((a, b) => a - b).join(',')}`;
     if (sig !== this.sig) {
       this.sig = sig;
@@ -300,32 +302,22 @@ export class GameScreen {
 
   /** Um bot comenta a jogada que acabou de acontecer (só visual, aparece depois da animação). */
   private botChatter(prev: RoomView, v: RoomView): void {
-    const mover = prev.players.find((p) => p.id === prev.turnId);
-    if (!mover) return;
-    const now = v.players.find((p) => p.id === mover.id);
-    if (!now) return;
-    const delta = mover.rackCount - now.rackCount;
-    const bots = v.players.filter((p) => p.bot && !p.left);
-    if (bots.length === 0 || Math.random() > 0.5) return;
-    const humans = v.players.filter((p) => !p.bot && !p.left);
-    const pickOne = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)]!;
-    let speaker = mover;
-    let target: string | undefined;
-    let kind: ChatKind;
-    if (mover.bot) {
-      kind = delta > 0 ? (delta >= 5 ? 'bigPlay' : 'ownPlay') : 'ownDraw';
-      if (kind === 'bigPlay') {
-        const others = bots.filter((b) => b.id !== mover.id);
-        if (others.length > 0) speaker = pickOne(others);
-        else kind = 'ownPlay';
-      }
-      if (humans.length > 0) target = pickOne(humans).name;
-    } else {
-      speaker = pickOne(bots);
-      kind = delta >= 5 ? 'bigPlay' : delta > 0 ? 'otherPlay' : 'otherDraw';
-      target = mover.name;
+    const moverId = prev.turnId;
+    if (!moverId) return;
+    const before = prev.players.find((p) => p.id === moverId);
+    const after = v.players.find((p) => p.id === moverId);
+    if (!before || !after) return;
+    if (v.turnNo < this.lastChatTurn || v.phase === 'ended') {
+      this.lastChatTurn = -9;
+      this.drawStreak.clear();
     }
-    const text = `${speaker.name}: ${pickChatter(kind, Math.random, target)}`;
+    const drew = after.rackCount > before.rackCount;
+    this.drawStreak.set(moverId, drew ? (this.drawStreak.get(moverId) ?? 0) + 1 : 0);
+    const plan = decideChatter(prev, v, this.drawStreak.get(moverId) ?? 0);
+    if (!plan) return;
+    if (!plan.priority && v.turnNo - this.lastChatTurn < 2) return;
+    this.lastChatTurn = v.turnNo;
+    const text = `${plan.speakerName}: ${pickChatter(plan.kind, Math.random, plan.target)}`;
     window.clearTimeout(this.chatTimer);
     this.chatTimer = window.setTimeout(() => {
       this.chatBubble.textContent = text;
@@ -596,7 +588,13 @@ export class GameScreen {
     const v = this.view;
     if (!v) return;
     let remaining: number | null = null;
-    if (v.turnEndsAt) remaining = Math.max(0, Math.ceil((v.turnEndsAt - v.serverNow) / 1000 - (performance.now() - this.receivedAt) / 1000));
+    if (v.turnEndsAt) {
+      remaining = Math.max(0, Math.ceil((v.turnEndsAt - v.serverNow) / 1000 - (performance.now() - this.receivedAt) / 1000));
+      // o servidor soma o tempo da animação da jogada anterior: o relógio só começa a descer depois que as pedras terminam de entrar
+      const cur = v.players.find((p) => p.id === v.turnId);
+      const limit = cur?.bot ? BOT_TURN_SECONDS : v.turnSeconds;
+      if (limit > 0) remaining = Math.min(remaining, limit);
+    }
     this.timerPill.classList.toggle('hidden', remaining === null || v.phase !== 'playing');
     if (remaining !== null) {
       this.timerPill.textContent = `⏱ ${remaining}s`;
