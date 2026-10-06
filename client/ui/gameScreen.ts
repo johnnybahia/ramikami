@@ -560,7 +560,7 @@ export class GameScreen {
       h('button', { class: 'mitem', attrs: { type: 'button' }, on: { click: () => { m.close(); fn(); } } }, h('span', { class: 'ic', text: icon }), h('span', { text: label }));
     const hasNew = !!this.pwa?.update;
     panel.append(
-      h('h2', { text: online ? `Sala ${v.code}` : 'Jogo' }),
+      h('h2', { text: online ? `SALA ${v.code}` : 'Jogo' }),
       h('p', { class: 'muted', text: v.phase === 'lobby' ? 'Aguardando começar' : `Pote: ${v.poolCount} pedras` }),
       h(
         'div',
@@ -839,7 +839,7 @@ export class GameScreen {
     const list = h('ul', { class: 'plist' });
     for (const p of v.players) {
       const bp = p.bot ? personaOfBotId(p.id) : undefined;
-      const li = h('li', {}, ...(bp ? [h('img', { class: 'avatar tiny', attrs: { src: personaAvatar(bp), alt: '' } }), ' '] : []), `${p.isHost ? '♛ ' : ''}${p.bot ? '🤖 ' : ''}${p.name}${p.id === v.you ? ' (você)' : ''}${p.connected ? '' : ' · offline'}`);
+      const li = h('li', { class: p.isHost ? 'is-host' : '' }, ...(bp ? [h('img', { class: 'avatar tiny', attrs: { src: personaAvatar(bp), alt: '' } }), ' '] : []), `${p.isHost ? '♛ ' : ''}${p.bot ? '🤖 ' : ''}${p.name}${p.id === v.you ? ' (você)' : ''}${p.connected ? '' : ' · offline'}`);
       list.append(li);
     }
     // bots: um só nível para todos; o número e o nível valem para a sala toda (só o anfitrião muda)
@@ -881,7 +881,13 @@ export class GameScreen {
     return h(
       'div',
       { class: 'panel lobby' },
-      h('h2', { text: `Sala ${v.code}` }),
+      h(
+        'div',
+        { class: 'room-banner' },
+        h('span', { class: 'rb-label', text: 'SALA' }),
+        h('span', { class: 'rb-code', text: v.code }),
+        h('div', { class: 'rb-host' }, h('span', { text: 'Aberta por ' }), h('b', { text: `♛ ${v.players.find((p) => p.id === v.hostId)?.name ?? ''}` })),
+      ),
       h('p', { class: 'muted', text: `${v.players.length}/4 jogadores · tempo por jogada dos humanos (bots sempre ${BOT_TURN_SECONDS}s)` }),
       seg,
       h('label', { class: 'lbl', text: 'Sessão: melhor de (todas as partidas são jogadas)' }),

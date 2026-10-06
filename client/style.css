@@ -333,3 +333,17 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 /* fala dos bots: logo abaixo da barra de jogadores, por cima da mesa, sem empurrar nada */
 .chat-bubble { position: absolute; z-index: 5; left: 50%; top: calc(var(--head-h, 64px) + 4px); transform: translateX(-50%); max-width: 88vw; padding: 5px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; color: #f3efe2; background: rgba(8, 14, 11, 0.72); border: 1px solid rgba(255, 255, 255, 0.18); pointer-events: none; text-align: center; opacity: 1; transition: opacity 0.3s; }
 .game.my-turn .chat-bubble { top: calc(var(--head-h, 64px) + 60px); }
+
+/* sala: nome em destaque e quem abriu bem visível */
+.room-banner { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 10px; margin-bottom: 8px; border-radius: 16px; border: 2px solid var(--gold); background: linear-gradient(180deg, rgba(231, 194, 106, 0.2), rgba(231, 194, 106, 0.06)); }
+.room-banner .rb-label { font-size: 0.8rem; font-weight: 800; letter-spacing: 0.4em; color: var(--gold); }
+.room-banner .rb-code { font-size: 2.4rem; font-weight: 900; letter-spacing: 0.22em; line-height: 1.1; color: #fff3b0; text-shadow: 0 0 14px rgba(255, 210, 58, 0.45); }
+.room-banner .rb-host { margin-top: 4px; font-size: 1rem; color: var(--text); }
+.room-banner .rb-host b { font-size: 1.2rem; color: #1b1300; background: #ffd23a; padding: 2px 12px; border-radius: 999px; }
+.plist li.is-host { font-weight: 800; color: var(--gold); }
+.room .room-code { display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.room .room-code small { font-size: 0.6rem; font-weight: 800; letter-spacing: 0.3em; color: var(--muted); }
+.room .room-code b { font-size: 1.3rem; letter-spacing: 0.15em; }
+.room .room-info { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.room .room-info .room-host { font-size: 1.05rem; letter-spacing: 0; color: #1b1300; background: #ffd23a; padding: 1px 10px; border-radius: 999px; }
+.room .room-info small { font-size: 0.75rem; color: var(--muted); }
