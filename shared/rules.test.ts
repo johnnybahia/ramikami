@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { analyzeSet, arrangeTiles, validatePlay } from './rules';
 import { createGame, drawTurn, playTurn, removePlayer, currentPlayer, salvagePlay } from './game';
-import { botMove, PERSONAS } from './bot';
+import { botMove, pickBots, PERSONAS } from './bot';
 import { solveTable } from './solver';
 import { mulberry32, handPoints } from './tiles';
 import type { SetState } from './layout';
@@ -181,5 +181,18 @@ describe('salvagePlay (fim do tempo)', () => {
     expect(salvagePlay(g, 'a', [S(1, [T(0, 5, 1), T(0, 6, 1), T(0, 7, 1), T(0, 8, 1)], 0, 0)])).toBeNull();
     g.players[0]!.melded = false;
     expect(salvagePlay(g, 'a', [S(1, [T(0, 5, 1), T(0, 6, 1), T(0, 7, 1)], 0, 0), S(2, [T(1, 9), T(2, 9), T(3, 9)], 0, 3)])).toBeNull();
+  });
+});
+
+describe('pickBots', () => {
+  it('devolve exatamente a quantidade pedida, sem repetir nomes', () => {
+    for (const level of ['easy', 'normal', 'hard', 'master'] as const) {
+      for (const n of [0, 1, 2, 3, 4]) {
+        const bots = pickBots(level, n, mulberry32(n + 7));
+        expect(bots.length).toBe(n);
+        expect(new Set(bots.map((b) => b.id)).size).toBe(n);
+        expect(bots.every((b) => b.level === level)).toBe(true);
+      }
+    }
   });
 });
