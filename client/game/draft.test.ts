@@ -74,3 +74,17 @@ describe('lugar guia para pedras soltas', () => {
     expect([far.x, far.z]).toEqual([2, 1]);
   });
 });
+
+describe('antes de abrir: a mesa dos outros não é empurrada', () => {
+  const T = (c: number, n: number) => c * 13 + n - 1;
+  it('pedra nova colada num jogo antigo não move o jogo antigo', () => {
+    const table = [{ id: 1, tiles: [T(0, 5), T(0, 6), T(0, 7)], x: 10, z: 6 }];
+    const d = newDraft(table, [T(1, 1)], false);
+    const n = dropNew(d, T(1, 1), 14.5, 6.5)!;
+    expect(n).not.toBeNull();
+    expect(n.table.find((s) => s.id === 1)!.x).toBe(10);
+    const mine = n.table.find((s) => s.tiles.includes(T(1, 1)))!;
+    expect(mine.z).toBe(6);
+    expect(mine.x).toBeGreaterThanOrEqual(14); // sempre uma pedra de distância do jogo antigo (10..12)
+  });
+});

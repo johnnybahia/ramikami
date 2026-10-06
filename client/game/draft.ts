@@ -83,7 +83,7 @@ export function dropOnSet(d: Draft, id: number, setId: number, index: number): D
   }
   target.tiles.splice(Math.max(0, Math.min(index, target.tiles.length)), 0, id);
   if (wasInRack) n.placed.add(id);
-  n.table = fixLayout(n.table, setId);
+  n.table = fixLayout(n.table, setId, n.melded);
   return n;
 }
 
@@ -116,7 +116,7 @@ export function dropNew(d: Draft, id: number, x: number, z: number, exact = fals
   const want = exact ? { x: Math.max(0, Math.min(COLS - 1, Math.floor(x))), z: Math.max(0, Math.min(ROWS - 1, Math.floor(z))) } : snapRowSpot(n.table, 1, x, z);
   const set: SetState = { id: nextId(n), tiles: [id], x: want.x, z: want.z };
   n.table.push(set);
-  const packed = packRows(n.table, set.id);
+  const packed = n.melded ? packRows(n.table, set.id) : fits(n.table.filter((v) => v.id !== set.id), -1, set.x, set.z, 1) ? n.table.map((v) => ({ ...v, tiles: v.tiles.slice() })) : null;
   if (packed) {
     for (const p of packed) {
       const t = n.table.find((v) => v.id === p.id)!;
@@ -219,8 +219,8 @@ export function splitSet(d: Draft, setId: number, index: number): Draft | null {
   const tail = src.tiles.splice(index);
   const created: SetState = { id: nextId(n), tiles: tail, x: src.x + index + 1, z: src.z };
   n.table.push(created);
-  // a parte cortada fica uma pedra adiante; quem estava na frente é empurrado
-  const packed = packRows(n.table, created.id);
+  // a parte cortada fica uma pedra adiante; quem estava na frente é empurrado (antes de abrir, ninguém é empurrado)
+  const packed = n.melded ? packRows(n.table, created.id) : null;
   if (packed) {
     for (const p of packed) {
       const t = n.table.find((v) => v.id === p.id)!;
@@ -242,7 +242,7 @@ export function moveSet(d: Draft, setId: number, x: number, z: number): Draft | 
   if (!s) return null;
   s.x = Math.max(0, Math.min(COLS - s.tiles.length, Math.round(x)));
   s.z = Math.max(0, Math.min(ROWS - 1, Math.round(z)));
-  const packed = packRows(n.table, setId);
+  const packed = n.melded ? packRows(n.table, setId) : null;
   if (packed) {
     for (const p of packed) {
       const t = n.table.find((v) => v.id === p.id)!;
@@ -259,11 +259,11 @@ export function moveSet(d: Draft, setId: number, x: number, z: number): Draft | 
 }
 
 /** Depois de aumentar um conjunto, garante que ele (e só ele) não invade vizinhos. */
-function fixLayout(table: SetState[], setId: number): SetState[] {
+function fixLayout(table: SetState[], setId: number, canPush = true): SetState[] {
   const s = table.find((v) => v.id === setId);
   if (!s) return table;
-  // o conjunto que cresceu fica parado e empurra os vizinhos da linha para o lado
-  const packed = packRows(table, setId);
+  // o conjunto que cresceu fica parado e empurra os vizinhos da linha para o lado (antes de abrir, nada dos outros é mexido)
+  const packed = canPush ? packRows(table, setId) : null;
   if (packed) {
     for (const p of packed) {
       const t = table.find((v) => v.id === p.id)!;
