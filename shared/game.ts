@@ -44,7 +44,8 @@ export interface GameState {
 
 export type Step = { ok: true; state: GameState } | { ok: false; reason: string };
 
-export function createGame(inits: readonly PlayerInit[], rng: Rng): GameState {
+/** `first`: quem começa (ex.: o vencedor da partida anterior numa sessão); sem ele, sorteia. */
+export function createGame(inits: readonly PlayerInit[], rng: Rng, first?: string): GameState {
   const pool = newPool(rng);
   const players: PlayerState[] = inits.map((p) => ({
     id: p.id,
@@ -56,7 +57,9 @@ export function createGame(inits: readonly PlayerInit[], rng: Rng): GameState {
     timeouts: 0,
     left: false,
   }));
-  return { phase: 'playing', players, pool, table: [], turn: Math.floor(rng() * players.length), turnNo: 1, passStreak: 0 };
+  const at = first === undefined ? -1 : players.findIndex((p) => p.id === first);
+  const turn = at >= 0 ? at : Math.floor(rng() * players.length);
+  return { phase: 'playing', players, pool, table: [], turn, turnNo: 1, passStreak: 0 };
 }
 
 export const activePlayers = (s: GameState): PlayerState[] => s.players.filter((p) => !p.left);

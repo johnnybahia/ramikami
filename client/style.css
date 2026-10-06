@@ -284,3 +284,41 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .playerbar .pmeta { font-size: 0.6rem; line-height: 1; }
 .playerbar .pbox .ctl { top: 42px; }
 .hidden-timer { display: none; }
+
+/* ---- jogadores maiores (rostos/câmeras), comandos menores ---- */
+.playerbar { gap: 8px; }
+.playerbar .pbox { min-width: 0; max-width: none; gap: 2px; }
+.playerbar .pbox .frame { width: clamp(52px, calc((100vw - 150px) / 4), 110px); height: clamp(52px, calc((100vw - 150px) / 4), 110px); border-radius: 14px; border-width: 2px; }
+.playerbar .pbox.turn .frame { box-shadow: 0 0 0 3px rgba(231, 194, 106, 0.55); }
+.playerbar .pbox .holder .avatar.initial { font-size: 1.8rem; }
+.playerbar .pname { font-size: 0.7rem; max-width: clamp(60px, calc((100vw - 150px) / 4 + 10px), 130px); }
+.playerbar .pmeta { font-size: 0.66rem; }
+.playerbar .pbox + .pbox::before { left: -9px; top: 18px; font-size: 1.1rem; }
+.playerbar .pbox .ctl { top: calc(100% - 4px); }
+.actionbar { gap: 4px; padding-top: 5px; padding-bottom: 4px; }
+.mainrow { gap: 6px; }
+.mainrow .btn { min-height: 42px; font-size: 0.92rem; padding: 6px 8px; }
+.toolrow, .moderow { gap: 4px; }
+.moderow { padding-top: 4px; }
+.act2 { min-height: 38px; padding: 2px; border-radius: 10px; }
+.act2 .ic { font-size: 0.98rem; }
+.act2 .tx { font-size: 0.56rem; }
+.zoomdock { gap: 6px; }
+.zoomdock .zoom { width: 38px; height: 38px; font-size: 1.1rem; }
+@media (min-width: 900px) {
+  .playerbar .pbox .frame { width: 120px; height: 120px; border-radius: 18px; }
+  .playerbar .pname { font-size: 0.85rem; max-width: 140px; }
+  .playerbar .pmeta { font-size: 0.75rem; }
+  .playerbar .pbox + .pbox::before { top: 44px; }
+}
+
+/* ---- quem está na vez: bem destacado ---- */
+.playerbar .pbox { transition: opacity 0.2s, transform 0.2s; }
+.playerbar:has(.pbox.turn) .pbox:not(.turn) { opacity: 0.72; }
+.playerbar .pbox.turn { z-index: 2; transform: translateY(2px) scale(1.1); }
+.playerbar .pbox.turn .frame { border: 3px solid var(--gold); box-shadow: 0 0 0 3px rgba(231, 194, 106, 0.45), 0 0 18px 4px rgba(231, 194, 106, 0.55); animation: turn-ring 1.2s ease-in-out infinite alternate; }
+.playerbar .pbox.turn .pname { background: var(--gold); color: #1c1608; font-weight: 800; }
+.playerbar .pbox.turn .pname { max-width: none; overflow: visible; }
+.playerbar .pbox.turn .pmeta { color: var(--gold); font-weight: 700; }
+@keyframes turn-ring { from { box-shadow: 0 0 0 3px rgba(231, 194, 106, 0.35), 0 0 10px 2px rgba(231, 194, 106, 0.35); } to { box-shadow: 0 0 0 4px rgba(231, 194, 106, 0.7), 0 0 22px 6px rgba(231, 194, 106, 0.7); } }
+@media (prefers-reduced-motion: reduce) { .playerbar .pbox.turn .frame { animation: none; } }

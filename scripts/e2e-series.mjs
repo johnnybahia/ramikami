@@ -47,11 +47,15 @@ ok(A.state.series.done === 1 && A.state.series.rows.length === 2, 'placar regist
 B.send({ t: 'next' });
 await sleep(200);
 ok(A.state.phase === 'ended', 'só o anfitrião inicia a próxima partida');
+const w1 = A.state.result.winners;
 A.send({ t: 'next' });
 ok(await A.until((s) => s.phase === 'playing' && s.series.done === 1), 'partida 2 iniciada, placar mantido');
+ok(w1.includes(A.state.turnId), `quem venceu a partida 1 começa a 2 (${w1.join()} → ${A.state.turnId})`);
 ok(await playOut(), 'partida 2 terminou');
+const w2 = A.state.result.winners;
 A.send({ t: 'next' });
 ok(await A.until((s) => s.phase === 'playing' && s.series.done === 2), 'partida 3 iniciada');
+ok(w2.includes(A.state.turnId), 'quem venceu a partida 2 começa a 3');
 ok(await playOut(), 'partida 3 terminou');
 ok(A.state.series.done === 3 && A.state.series.over, 'sessão concluída (3 de 3)');
 const rows = A.state.series.rows;
