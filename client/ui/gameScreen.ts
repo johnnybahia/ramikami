@@ -14,6 +14,7 @@ import {
   resolveBoardDrop,
   sortRack,
   splitSet,
+  newSetSpot,
   suggestDrop,
   tidyTable,
   tableWithoutTile,
@@ -306,7 +307,8 @@ export class GameScreen {
     if (!this.draft || !this.myTurn()) return this.sync();
     let act = resolveBoardDrop(tableWithoutTile(this.draft.table, id), cx, cz);
     if (act.kind === 'new') act = suggestDrop(this.draft.table, id, cx, cz) ?? act;
-    this.apply(act.kind === 'insert' ? dropOnSet(this.draft, id, act.setId, act.index) : dropNew(this.draft, id, act.x, act.z), 'Sem espaço na mesa.');
+    const spot = act.kind === 'new' ? newSetSpot(this.draft.table, id, cx, cz) : null;
+    this.apply(act.kind === 'insert' ? dropOnSet(this.draft, id, act.setId, act.index) : dropNew(this.draft, id, spot!.x, spot!.z), 'Sem espaço na mesa.');
   }
 
   private onSetMove(setId: number, dx: number, dz: number): void {

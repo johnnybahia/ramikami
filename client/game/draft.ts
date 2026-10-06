@@ -165,6 +165,16 @@ export function suggestDrop(table: readonly SetState[], id: number, cx: number, 
   return best ? best.act : null;
 }
 
+/**
+ * Onde cai uma pedra solta fora de qualquer conjunto: se estiver perto do "lugar guia" (próxima vaga compacta
+ * perto do centro), encaixa nele; senão fica onde foi solta.
+ */
+export function newSetSpot(table: readonly SetState[], id: number, x: number, z: number): { x: number; z: number; guide: { x: number; z: number } | null } {
+  const guide = findCompactSpot(tableWithoutTile(table, id), 1);
+  if (guide && Math.abs(guide.x + 0.5 - x) <= 4 && Math.abs(guide.z + 0.5 - z) <= 1.6) return { x: guide.x, z: guide.z, guide };
+  return { x: Math.max(0, Math.min(COLS - 1, Math.floor(x))), z: Math.max(0, Math.min(ROWS - 1, Math.floor(z))), guide };
+}
+
 export function splitSet(d: Draft, setId: number, index: number): Draft | null {
   const s = d.table.find((x) => x.id === setId);
   if (!s || index <= 0 || index >= s.tiles.length) return null;

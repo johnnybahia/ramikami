@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dropNew, dropOnSet, dropToRack, draftStatus, newDraft, resolveBoardDrop, splitSet, tidyTable, acceptingSets, suggestDrop } from './draft';
+import { dropNew, dropOnSet, dropToRack, draftStatus, newDraft, resolveBoardDrop, splitSet, tidyTable, acceptingSets, suggestDrop, newSetSpot } from './draft';
 
 const T = (color: number, num: number) => color * 13 + (num - 1);
 
@@ -59,5 +59,17 @@ describe('ajuda de encaixe', () => {
     expect(suggestDrop(table, T(0, 7), 12, 3.5)).toEqual({ kind: 'insert', setId: 1, index: 3 });
     expect(suggestDrop(table, T(0, 7), 30, 3.5)).toBeNull();
     expect(suggestDrop(table, T(1, 9), 8, 3.5)).toBeNull();
+  });
+});
+
+describe('lugar guia para pedras soltas', () => {
+  it('perto do lugar guia encaixa nele; longe fica onde foi solta', () => {
+    const table = [{ id: 1, tiles: [0, 1, 2], x: 15, z: 6 }];
+    const near = newSetSpot(table, 99, 13.2, 6.5);
+    expect(near.guide).not.toBeNull();
+    expect(near.x).toBe(near.guide!.x);
+    const far = newSetSpot(table, 99, 2.4, 1.4);
+    expect(far.x).toBe(2);
+    expect(far.z).toBe(1);
   });
 });
