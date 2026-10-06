@@ -5,6 +5,7 @@ import {
   MAX_PHOTO_CHARS,
   BEST_OF_OPTIONS,
   BOT_TURN_SECONDS,
+  animMsFor,
   CONFIRM_SECONDS,
   MAX_ROOM_PLAYERS,
   NAME_MAX,
@@ -397,7 +398,9 @@ export class GameRoom implements DurableObject {
         if (!table) return this.err(ws, 'Mesa inválida.');
         const step = playTurn(s.game, me, table);
         if (!step.ok) return this.err(ws, step.reason);
-        await this.afterGameChange(step.state);
+        const rackBefore = s.game.players.find((p) => p.id === me)?.rack.length ?? 0;
+        const rackAfter = step.state.players.find((p) => p.id === me)?.rack.length ?? rackBefore;
+        await this.afterGameChange(step.state, animMsFor(rackBefore - rackAfter));
         return;
       }
       case 'draw': {
@@ -567,7 +570,8 @@ export class GameRoom implements DurableObject {
     }
   }
 
-  private async afterGameChange(g: GameState): Promise<void> {
+  /** `bonusMs`: tempo da animação da jogada que acabou de acontecer (o próximo jogador não perde esse tempo). */
+  private async afterGameChange(g: GameState, bonusMs = 0): Promise<void> {
     const s = this.s!;
     s.game = g;
     this.draftTable = null;
@@ -583,8 +587,8 @@ export class GameRoom implements DurableObject {
       const cur = currentPlayer(g);
       if (cur.isBot) {
         // o bot "pensa" uma parte do tempo do turno; o relógio mostrado é o do turno inteiro, como para humanos
-        s.botAt = Date.now() + thinkDelayMs(this.botCfg(cur.id), BOT_TURN_SECONDS);
-        s.turnEndsAt = Date.now() + BOT_TURN_SECONDS * 1000;
+        s.botAt = Date.now() + bonusMs + thinkDelayMs(this.botCfg(cur.id), BOT_TURN_SECONDS);
+        s.turnEndsAt = Date.now() + bonusMs + BOT_TURN_SECONDS * 1000;
         await this.ctx.storage.setAlarm(s.botAt);
         await this.listing();
         await this.persist();
@@ -598,7 +602,7 @@ export class GameRoom implements DurableObject {
         s.turnEndsAt = null;
         await this.ctx.storage.deleteAlarm();
       } else {
-        s.turnEndsAt = Date.now() + secs * 1000;
+        s.turnEndsAt = Date.now() + bonusMs + secs * 1000;
         await this.ctx.storage.setAlarm(s.turnEndsAt);
       }
       await this.listing();
@@ -769,6 +773,8 @@ export class GameRoom implements DurableObject {
       const text = pool[Math.floor(Math.random() * pool.length)]!;
       for (const ws of this.online().values()) this.send(ws, { t: 'say', id: cur.id, text });
     }
-    await this.afterGameChange(step.state);
+    const before = cur.rack.length;
+    const after = step.state.players.find((p) => p.id === cur.id)?.rack.length ?? before;
+    await this.afterGameChange(step.state, animMsFor(before - after));
   }
 }
