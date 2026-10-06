@@ -19,6 +19,40 @@ export const createRoom = (turnSeconds: TurnSeconds, isPublic: boolean): Promise
 export const listRooms = (): Promise<LobbyRoom[]> => j('/api/rooms');
 export const getRanking = (): Promise<RankingRow[]> => j('/api/ranking');
 
+/** Reserva o nome para este perfil. `false` = já pertence a outro jogador; sem conexão não bloqueia. */
+export async function claimName(id: string, name: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${API}/api/name/claim`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, name }) });
+    return r.status !== 409;
+  } catch {
+    return true;
+  }
+}
+
+const MASTER_KEY = 'ramikami_master_key';
+export const getMasterKey = (): string => {
+  try {
+    return localStorage.getItem(MASTER_KEY) ?? '';
+  } catch {
+    return '';
+  }
+};
+export const setMasterKey = (k: string): void => {
+  try {
+    if (k) localStorage.setItem(MASTER_KEY, k);
+    else localStorage.removeItem(MASTER_KEY);
+  } catch {
+    /* sem armazenamento */
+  }
+};
+
+/** Zera o ranking global. 401 = chave errada (e apaga a chave salva). */
+export async function resetRanking(key: string): Promise<boolean> {
+  const r = await fetch(`${API}/api/ranking/reset`, { method: 'POST', headers: { 'X-Admin-Key': key } });
+  if (r.status === 401) setMasterKey('');
+  return r.ok;
+}
+
 export async function getIceServers(): Promise<RTCIceServer[]> {
   try {
     return (await j<{ iceServers: RTCIceServer[] }>('/api/ice')).iceServers;

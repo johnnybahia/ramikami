@@ -1,4 +1,4 @@
-import { createRoom, getRanking, listRooms } from '../api';
+import { claimName, createRoom, getMasterKey, getRanking, listRooms, resetRanking, setMasterKey } from '../api';
 import { getPwa, installApp, applyUpdate, isIos, onPwa } from '../pwa';
 import { avatarColor, loadA11y, saveA11y, type A11y, loadOfflineSettings, newId, photoFromFile, saveOfflineSettings, saveProfile, type OfflineSettings, type Profile } from '../store';
 import { BOT_LEVELS, LEVEL_CFG } from '../../shared/bot';
@@ -87,14 +87,20 @@ export function showProfile(root: HTMLElement, existing: Profile | null, onDone:
     });
     f.click();
   };
-  const save = (): void => {
-    const name = nameIn.value.trim();
+  let saving = false;
+  const save = async (): Promise<void> => {
+    const name = nameIn.value.trim().replace(/\s+/g, ' ');
     if (name.length < 2) return toast('Digite um nome com pelo menos 2 letras.');
+    if (saving) return;
+    saving = true;
+    const free = await claimName(id, name);
+    saving = false;
+    if (!free) return toast('Esse nome já está em uso por outro jogador. Escolha outro.');
     const p: Profile = { id, name, photo, cam: camIn.checked, mic: micIn.checked };
     saveProfile(p);
     onDone(p);
   };
-  nameIn.addEventListener('keydown', (e) => e.key === 'Enter' && save());
+  nameIn.addEventListener('keydown', (e) => e.key === 'Enter' && void save());
   root.append(
     h(
       'div',
@@ -110,7 +116,7 @@ export function showProfile(root: HTMLElement, existing: Profile | null, onDone:
         nameIn,
         h('label', { class: 'check' }, camIn, h('span', { text: 'Entrar nas salas ao vivo com minha câmera (no lugar da foto)' })),
         h('label', { class: 'check' }, micIn, h('span', { text: 'Entrar nas salas com o microfone ligado' })),
-        h('div', { class: 'row' }, btn('Salvar e continuar', save, 'primary'), existing && onCancel ? btn('Cancelar', onCancel, 'ghost') : null),
+        h('div', { class: 'row' }, btn('Salvar e continuar', () => void save(), 'primary'), existing && onCancel ? btn('Cancelar', onCancel, 'ghost') : null),
       ),
     ),
   );
@@ -148,7 +154,7 @@ export function showMenu(root: HTMLElement, a: MenuActions): () => void {
         { class: 'menu-btns' },
         btn('Jogar online', () => onlinePanel(a), 'primary big'),
         btn('Jogar offline (contra bots)', () => offlinePanel(a), 'big'),
-        btn('Ranking', () => void rankingPanel(a.profile.id), 'big'),
+        btn('Ranking', () => void rankingPanel(a.profile.id, a.profile.name), 'big'),
         btn('Como jogar', () => rulesPanel(), 'ghost'),
       ),
       pwaBox,
@@ -230,9 +236,35 @@ function onlinePanel(a: MenuActions): void {
   void refresh();
 }
 
-async function rankingPanel(myId: string): Promise<void> {
+async function rankingPanel(myId: string, myName: string): Promise<void> {
   const body = h('div', { class: 'rank-body' }, h('p', { class: 'muted', text: 'Carregando…' }));
-  const m = modal(h('div', { class: 'panel ranking' }, h('h3', { text: 'Ranking' }), h('p', { class: 'muted', text: 'Menor média de pontos na mão por partida vence. Entram no topo quem tem 3+ partidas online.' }), body, btn('Fechar', () => m.close(), 'ghost')));
+  const master = h('div', { class: 'row' });
+  if (getMasterKey() || myName.trim().toLowerCase() === 'johnny') {
+    master.append(
+      btn(
+        'Zerar ranking (mestre)',
+        async () => {
+          let key = getMasterKey();
+          if (!key) {
+            key = (prompt('Chave de mestre:') ?? '').trim();
+            if (!key) return;
+          }
+          if (!confirm('Zerar o ranking de TODOS os jogadores? Não dá para desfazer.')) return;
+          try {
+            if (await resetRanking(key)) {
+              setMasterKey(key);
+              clear(body);
+              body.append(h('p', { class: 'muted', text: 'Ranking zerado.' }));
+            } else toast('Chave incorreta ou sem conexão.');
+          } catch {
+            toast('Sem conexão com o servidor.');
+          }
+        },
+        'ghost small',
+      ),
+    );
+  }
+  const m = modal(h('div', { class: 'panel ranking' }, h('h3', { text: 'Ranking' }), h('p', { class: 'muted', text: 'Menor média de pontos na mão por partida vence. Entram no topo quem tem 3+ partidas online.' }), body, master, btn('Fechar', () => m.close(), 'ghost')));
   try {
     const rows = await getRanking();
     clear(body);
