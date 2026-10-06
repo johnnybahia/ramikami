@@ -149,7 +149,7 @@ function offlinePanel(a: MenuActions): void {
 
 function onlinePanel(a: MenuActions): void {
   let turn: TurnSeconds = 60;
-  let isPublic = false;
+  let isPublic = true;
   const codeIn = h('input', { class: 'input code-in', attrs: { type: 'text', maxlength: '5', placeholder: 'CÓDIGO', autocapitalize: 'characters', autocomplete: 'off' } });
   const list = h('div', { class: 'rooms' }, h('p', { class: 'muted', text: 'Carregando salas…' }));
   const m = modal(h('div', { class: 'panel online' }));
@@ -188,7 +188,7 @@ function onlinePanel(a: MenuActions): void {
     h('h3', { text: 'Jogar online' }),
     h('label', { class: 'lbl', text: 'Criar sala — tempo por jogada' }),
     segmented(TURN_SECONDS_OPTIONS.map((s) => ({ value: s, label: `${s}s` })), turn, (v) => (turn = v)),
-    h('label', { class: 'check' }, h('input', { attrs: { type: 'checkbox' }, on: { change: (e) => (isPublic = (e.target as HTMLInputElement).checked) } }), h('span', { text: 'Sala pública (aparece na lista)' })),
+    h('label', { class: 'check' }, h('input', { attrs: { type: 'checkbox', checked: '' }, on: { change: (e) => (isPublic = (e.target as HTMLInputElement).checked) } }), h('span', { text: 'Sala pública (aparece na lista)' })),
     btn('Criar sala', () => void create(), 'primary'),
     h('hr'),
     h('label', { class: 'lbl', text: 'Entrar com código' }),

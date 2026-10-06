@@ -21,7 +21,7 @@ import {
 import { analyzeSet, arrangeTiles } from '../../shared/rules';
 import { isJoker } from '../../shared/tiles';
 import { relayout, type SetState } from '../../shared/layout';
-import { TURN_SECONDS_OPTIONS, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
+import { TURN_SECONDS_OPTIONS, type BotLevel, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
 import { applyUpdate, onPwa, type PwaState } from '../pwa';
 import { avatarColor, type Profile } from '../store';
 import { avatarEl, btn, clear, h, toast } from './dom';
@@ -63,6 +63,7 @@ export class GameScreen {
   private draft: Draft | null = null;
   private undo: Draft[] = [];
   private selected = new Set<number>();
+  private botLevel: BotLevel = 'normal';
   private btnPlaySel!: HTMLButtonElement;
   private turnBanner = h('div', { class: 'turn-banner hidden', text: '⚡ SUA VEZ! Toque para começar' });
   private nagTimer = 0;
@@ -636,7 +637,17 @@ export class GameScreen {
   private lobbyPanel(v: RoomView): HTMLElement {
     const host = v.hostId === v.you;
     const list = h('ul', { class: 'plist' });
-    for (const p of v.players) list.append(h('li', { text: `${p.isHost ? '♛ ' : ''}${p.name}${p.id === v.you ? ' (você)' : ''}${p.connected ? '' : ' · offline'}` }));
+    for (const p of v.players) {
+      const li = h('li', { text: `${p.isHost ? '♛ ' : ''}${p.bot ? '🤖 ' : ''}${p.name}${p.id === v.you ? ' (você)' : ''}${p.connected ? '' : ' · offline'}` });
+      if (host && p.bot) li.append(' ', btn('×', () => this.b.removeBot(p.id), 'ghost small'));
+      list.append(li);
+    }
+    const levelSel = h('select', { class: 'input' }, h('option', { text: 'Fácil', attrs: { value: 'easy' } }), h('option', { text: 'Médio', attrs: { value: 'normal' } }), h('option', { text: 'Difícil', attrs: { value: 'hard' } }));
+    levelSel.value = this.botLevel;
+    levelSel.addEventListener('change', () => (this.botLevel = levelSel.value as BotLevel));
+    const botRow = host
+      ? h('div', { class: 'row' }, levelSel, btn('+ Bot', () => this.b.addBot(this.botLevel), v.players.length >= 4 ? 'ghost' : ''))
+      : null;
     const seg = h('div', { class: 'seg' });
     for (const s of TURN_SECONDS_OPTIONS) {
       seg.append(
@@ -660,6 +671,7 @@ export class GameScreen {
       h('p', { class: 'muted', text: `${v.players.length}/4 jogadores · tempo por jogada` }),
       seg,
       list,
+      botRow,
       h('div', { class: 'row' }, btn('Convidar', () => void this.shareRoom())),
       h(
         'div',

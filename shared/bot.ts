@@ -11,7 +11,13 @@ interface Cand {
 }
 
 const key = (id: number): number => tileColor(id) * 13 + tileNum(id) - 1;
-const NODE_BUDGET = 40000;
+export type BotLevel = 'easy' | 'normal' | 'hard';
+export const BOT_LEVELS: readonly BotLevel[] = ['easy', 'normal', 'hard'];
+const LEVEL: Record<BotLevel, { budget: number; extend: boolean; jokers: boolean; skip: number }> = {
+  easy: { budget: 1500, extend: false, jokers: false, skip: 0.4 },
+  normal: { budget: 8000, extend: true, jokers: false, skip: 0.1 },
+  hard: { budget: 40000, extend: true, jokers: true, skip: 0 },
+};
 
 function genCands(cnt: Int8Array, jokers: number): Cand[] {
   const out: Cand[] = [];
@@ -67,7 +73,7 @@ function genCands(cnt: Int8Array, jokers: number): Cand[] {
 }
 
 /** Melhor conjunto de sets novos só com o cavalete (maximiza pontos tirados da mão; abertura exige 30+). */
-function packRack(rack: readonly number[], needMeld: boolean): Cand[] | null {
+function packRack(rack: readonly number[], needMeld: boolean, budget: number): Cand[] | null {
   const cnt = new Int8Array(52);
   let jokers = 0;
   for (const id of rack) {
@@ -80,7 +86,7 @@ function packRack(rack: readonly number[], needMeld: boolean): Cand[] | null {
   const sel: number[] = [];
   let jokersLeft = jokers;
   const dfs = (i: number, relief: number, meld: number): void => {
-    if (nodes++ > NODE_BUDGET) return;
+    if (nodes++ > budget) return;
     if (sel.length > 0 && (!needMeld || meld >= MELD_MIN) && (!best || relief > best.relief)) best = { sel: sel.slice(), relief };
     if (i >= cands.length) return;
     const c = cands[i]!;
@@ -147,9 +153,11 @@ function extend(table: SetState[], rest: number[], allowJokers: boolean): number
 }
 
 /** Jogada do bot: nova mesa, ou null para comprar uma pedra. */
-export function botMove(state: GameState): SetState[] | null {
+export function botMove(state: GameState, level: BotLevel = 'hard', rng: () => number = Math.random): SetState[] | null {
   const me = state.players[state.turn]!;
-  const chosen = packRack(me.rack, !me.melded);
+  const cfg = LEVEL[level];
+  if (me.melded && rng() < cfg.skip) return null;
+  const chosen = packRack(me.rack, !me.melded, cfg.budget);
   let table: SetState[] = state.table.map((s) => ({ ...s, tiles: s.tiles.slice() }));
   let rest = me.rack.slice();
   if (chosen) {
@@ -162,8 +170,8 @@ export function botMove(state: GameState): SetState[] | null {
     }
   }
   if (me.melded) {
-    rest = extend(table, rest, false);
-    if (rest.length > 0 && rest.every(isJoker)) rest = extend(table, rest, true);
+    if (cfg.extend) rest = extend(table, rest, false);
+    if (cfg.jokers && rest.length > 0 && rest.every(isJoker)) rest = extend(table, rest, true);
   } else if (!chosen) {
     return null;
   }

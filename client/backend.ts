@@ -1,5 +1,5 @@
 import type { SetState } from '../shared/layout';
-import type { RoomView, TurnSeconds } from '../shared/protocol';
+import type { BotLevel, RoomView, TurnSeconds } from '../shared/protocol';
 
 export interface BackendEvents {
   onView(v: RoomView): void;
@@ -23,6 +23,8 @@ export interface Backend {
   seat(id: string, seat: number): void;
   settings(turnSeconds: TurnSeconds): void;
   kick(id: string): void;
+  addBot(level: BotLevel): void;
+  removeBot(id: string): void;
   media(cam: boolean, mic: boolean): void;
   rtc(to: string, data: unknown): void;
   leave(): void;

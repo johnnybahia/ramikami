@@ -50,6 +50,7 @@ export class LocalBackend implements Backend {
       rackCount: p.rack.length,
       melded: p.melded,
       left: p.left,
+      bot: p.isBot,
     }));
     return {
       t: 'state',
@@ -127,6 +128,8 @@ export class LocalBackend implements Backend {
   seat(): void {}
   settings(): void {}
   kick(): void {}
+  addBot(): void {}
+  removeBot(): void {}
   media(): void {}
   rtc(): void {}
 

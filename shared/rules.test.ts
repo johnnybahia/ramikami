@@ -132,3 +132,19 @@ describe('arrangeTiles', () => {
     expect(arrangeTiles([T(0, 10), T(0, 11), T(0, 12)], false).ok).toBe(true);
   });
 });
+
+describe('bots por nível', () => {
+  it('cada nível devolve jogada válida ou null, dentro do orçamento de CPU', () => {
+    for (const level of ['easy', 'normal', 'hard'] as const) {
+      let worst = 0;
+      for (let seed = 1; seed <= 30; seed++) {
+        const g = createGame([{ id: 'a', name: 'A', isBot: true }, { id: 'b', name: 'B' }], mulberry32(seed));
+        const t0 = performance.now();
+        const m = botMove({ ...g, turn: 0 }, level, mulberry32(seed));
+        worst = Math.max(worst, performance.now() - t0);
+        if (m) expect(validatePlay(g.table, g.players[0]!.rack, g.players[0]!.melded, m).ok).toBe(true);
+      }
+      console.log(level, 'pior caso ms:', worst.toFixed(1));
+    }
+  });
+});
