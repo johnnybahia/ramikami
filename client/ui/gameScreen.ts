@@ -795,7 +795,8 @@ export class GameScreen {
     this.btnDraw.textContent = v.poolCount === 0 ? 'Passar' : `Comprar (${v.poolCount})`;
     const st = draftStatus(d);
     const dirty = isDirty(d);
-    this.btnConfirm.disabled = !mine || !st.check.ok;
+    this.btnConfirm.disabled = !mine;
+    this.btnConfirm.classList.toggle('dim', mine && !st.check.ok);
     let text = '';
     if (!mine && this.myTurn()) {
       text = 'Aguarde: a jogada anterior está aparecendo…';
@@ -808,12 +809,11 @@ export class GameScreen {
       text = d.melded ? 'Jogada válida' : `Abertura ✓ ${st.meldPoints} pontos`;
     } else if (!d.melded) {
       text = `Abertura: ${st.meldPoints}/${MELD_MIN}`;
-    } else {
-      text = `${st.check.reason} · no fim do tempo valem só os conjuntos feitos só com sua mão`;
     }
+    // jogada ainda incompleta/inválida: sem texto enquanto monta (o motivo aparece só ao tentar Confirmar ou se o tempo acabar)
     this.statusEl.textContent = text;
     this.statusEl.classList.toggle('hidden', !text || v.phase !== 'playing');
-    this.statusEl.classList.toggle('bad', mine && dirty && !st.check.ok);
+    this.statusEl.classList.toggle('bad', false);
     this.statusEl.classList.toggle('good', mine && dirty && st.check.ok);
     this.layoutBars();
   }

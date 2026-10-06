@@ -445,23 +445,40 @@ export class TableScene {
     const slow = this.slowNext;
     const seq = new Map<number, { delay: number; fresh: boolean }>();
     if (slow) {
-      let at = 0.3;
-      const sets = s.table.slice().sort((a, b) => a.z - b.z || a.x - b.x);
+      // ordem em que as pedras chegam: uma pedra só vai para uma casa depois que a pedra que estava lá saiu (nada fica por cima de nada)
+      type Mv = { id: number; fresh: boolean; to: string; from: string | null; z: number; x: number };
+      const cellOf = (v: THREE.Vector3): { cx: number; cz: number } => ({ cx: Math.round((v.x + BOARD_W / 2) / CELL_W - 0.5), cz: Math.round((v.z + BOARD_D / 2) / ROW_D - 0.5) });
       const probe = new THREE.Vector3();
-      for (const set of sets)
+      const todo: Mv[] = [];
+      for (const set of s.table)
         set.tiles.forEach((id, index) => {
           const t = this.tiles[id]!;
-          if (!t.present) {
-            seq.set(id, { delay: at, fresh: true });
-            at += ANIM_NEW_MS / 1000;
-          } else {
+          const to = `${set.x + index},${set.z}`;
+          if (!t.present) todo.push({ id, fresh: true, to, from: null, z: set.z, x: set.x + index });
+          else if (this.tileScene[id] === 'board') {
             probe.copy(this.boardPos(set.x, index, set.z, 0));
-            if (this.tileScene[id] === 'board' && t.target.distanceToSquared(probe) > 0.01) {
-              seq.set(id, { delay: at, fresh: false });
-              at += ANIM_MOVE_MS / 1000;
+            if (t.target.distanceToSquared(probe) > 0.01) {
+              const c = cellOf(t.target);
+              todo.push({ id, fresh: false, to, from: `${c.cx},${c.cz}`, z: set.z, x: set.x + index });
             }
           }
         });
+      todo.sort((a, b) => a.z - b.z || a.x - b.x);
+      const leaving = new Map<string, number>();
+      for (const m of todo) if (m.from) leaving.set(m.from, m.id);
+      let at = 0.3;
+      const left = todo.slice();
+      while (left.length > 0) {
+        let k = left.findIndex((m) => {
+          const occ = leaving.get(m.to);
+          return occ === undefined || occ === m.id;
+        });
+        if (k < 0) k = 0; // ciclo (duas pedras trocam de lugar): a que sai primeiro passa por cima
+        const m = left.splice(k, 1)[0]!;
+        if (m.from && leaving.get(m.from) === m.id) leaving.delete(m.from);
+        seq.set(m.id, { delay: at, fresh: m.fresh });
+        at += (m.fresh ? ANIM_NEW_MS : ANIM_MOVE_MS) / 1000;
+      }
     }
     const dragId = this.it && this.it.type === 'tile' && this.it.active ? this.it.id : -1;
     const setDrag = this.it && this.it.type === 'set' && this.it.active ? this.it : null;
@@ -513,6 +530,7 @@ export class TableScene {
       if (slow && region === 'board' && prev === 'board' && oldTarget.distanceToSquared(t.target) > 0.01) {
         t.delay = seq.get(t.id)?.delay ?? 0;
         t.speed = 2.2;
+        t.hop = true; // voa por cima das outras pedras até chegar
       }
       // cores de estado do conjunto
       let tint = 0;
