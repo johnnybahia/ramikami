@@ -30,6 +30,22 @@ export function modal(content: HTMLElement): { close(): void; el: HTMLElement } 
   return { close, el };
 }
 
+/** O nome do jogador em pedrinhas, no mesmo estilo do "RAMI" do logo, só que menores (personaliza o jogo). */
+export function nameTiles(name: string): HTMLElement {
+  const wrap = h('div', { class: 'logo-name' });
+  const chars = Array.from(name.trim().toUpperCase().replace(/\s+/g, ' ')).slice(0, 16);
+  const letters = chars.filter((c) => c !== ' ').length || 1;
+  const size = Math.max(20, Math.min(36, Math.floor((Math.min(window.innerWidth, 520) - 56) / (chars.length * 1.12 || 1))));
+  wrap.style.setProperty('--nt', `${size}px`);
+  let i = 0;
+  for (const ch of chars) {
+    if (ch === ' ') wrap.append(h('span', { class: 'nt-gap' }));
+    else wrap.append(h('span', { class: `nt c${i++ % 4}`, text: ch }));
+  }
+  void letters;
+  return wrap;
+}
+
 // ---------- perfil ----------
 export function showProfile(root: HTMLElement, existing: Profile | null, onDone: (p: Profile) => void, onCancel?: () => void): void {
   clear(root);
@@ -42,12 +58,21 @@ export function showProfile(root: HTMLElement, existing: Profile | null, onDone:
   camIn.checked = !!existing?.cam;
   micIn.checked = !!existing?.mic;
   const preview = h('div', { class: 'photo-preview' });
+  const namePreview = h('div', { class: 'name-preview' });
+  const drawName = (): void => {
+    clear(namePreview);
+    namePreview.append(nameTiles(nameIn.value || 'Seu nome'));
+  };
   const drawPreview = (): void => {
     clear(preview);
     preview.append(avatarEl(nameIn.value || '?', avatarColor(id), photo, 'avatar big'));
   };
   drawPreview();
-  nameIn.addEventListener('input', () => !photo && drawPreview());
+  nameIn.addEventListener('input', () => {
+    if (!photo) drawPreview();
+    drawName();
+  });
+  drawName();
   const pick = (capture: boolean): void => {
     const f = h('input', { attrs: { type: 'file', accept: 'image/*', ...(capture ? { capture: 'user' } : {}) } });
     f.addEventListener('change', async () => {
@@ -78,7 +103,8 @@ export function showProfile(root: HTMLElement, existing: Profile | null, onDone:
         'div',
         { class: 'panel profile' },
         h('h2', { text: existing ? 'Seu perfil' : 'Bem-vindo ao Rami-kami' }),
-        h('p', { class: 'muted', text: 'Escolha o nome e, se quiser, uma foto. Ela aparece no seu quadro na mesa quando a câmera está desligada.' }),
+        h('p', { class: 'muted', text: existing ? 'Seu nome aparece no logo do jogo, abaixo de Rami-kami. A foto (opcional) aparece no seu quadro quando a câmera está desligada.' : 'Qual é o seu nome? Ele fica salvo neste aparelho e aparece no logo do jogo, abaixo de Rami-kami.' }),
+        namePreview,
         preview,
         h('div', { class: 'row' }, btn('Escolher foto', () => pick(false)), btn('Tirar selfie', () => pick(true)), photo || existing?.photo ? btn('Remover', () => { photo = null; drawPreview(); }, 'ghost') : null),
         nameIn,
@@ -116,7 +142,7 @@ export function showMenu(root: HTMLElement, a: MenuActions): () => void {
       'div',
       { class: 'screen menu' },
       h('div', { class: 'menu-top' }, who, btn('Aa Visual', () => a11yPanel(), 'small ghost')),
-      h('div', { class: 'logo' }, tiles, kami),
+      h('div', { class: 'logo' }, tiles, kami, nameTiles(a.profile.name)),
       h(
         'div',
         { class: 'menu-btns' },

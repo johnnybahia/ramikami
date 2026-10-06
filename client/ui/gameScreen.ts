@@ -26,7 +26,7 @@ import { BOT_LEVELS, LEVEL_CFG, MAX_BOTS, personaOfBotId, type BotLevel } from '
 import { personaAvatar } from '../botAvatars';
 import { a11yPanel, modal } from './screens';
 import { relayout, type SetState } from '../../shared/layout';
-import { BEST_OF_OPTIONS, BOT_TURN_SECONDS, TURN_SECONDS_OPTIONS, turnLabel, type BestOf, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
+import { BEST_OF_OPTIONS, BOT_TURN_SECONDS, animMsFor, TURN_SECONDS_OPTIONS, turnLabel, type BestOf, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
 import { applyUpdate, checkForUpdate, onPwa, type PwaState } from '../pwa';
 import { avatarColor, loadA11y, type Profile } from '../store';
 import { avatarEl, btn, clear, h, toast } from './dom';
@@ -71,6 +71,9 @@ export class GameScreen {
   private checkpoint: SetState[] | null = null;
   /** a próxima atualização da cena vem de uma jogada de outro jogador: anima devagar */
   private slowFlag = false;
+  /** até quando a animação lenta da jogada de outro jogador ainda está rolando (a minha vez só libera depois) */
+  private busyUntil = 0;
+  private busyTimer = 0;
   private selected = new Set<number>();
   private botLevel: BotLevel = 'normal';
   private btnPlaySel!: HTMLButtonElement;
@@ -207,6 +210,23 @@ export class GameScreen {
     return !!this.view && this.view.phase === 'playing' && this.view.turnId === this.view.you;
   }
 
+  /** Ainda aparecendo, pedra por pedra, a jogada do jogador anterior? */
+  private busy(): boolean {
+    return performance.now() < this.busyUntil;
+  }
+
+  /** Minha vez de verdade: é a minha vez e a jogada anterior já terminou de aparecer. */
+  private canPlay(): boolean {
+    return this.myTurn() && !this.busy();
+  }
+
+  private afterBusy(): void {
+    if (!this.view) return;
+    this.sync();
+    this.updateActions();
+    if (this.myTurn()) this.startTurnAlert();
+  }
+
   private startTurnAlert(): void {
     this.stopTurnAlert();
     this.turnBanner.classList.remove('hidden');
@@ -238,7 +258,14 @@ export class GameScreen {
     const prev = this.view;
     this.view = v;
     this.receivedAt = performance.now();
-    if (prev && prev.phase === 'playing' && prev.turnId && prev.turnId !== v.you && v.turnNo > prev.turnNo && JSON.stringify(v.table) !== JSON.stringify(prev.table)) this.slowFlag = true;
+    if (prev && prev.phase === 'playing' && prev.turnId && prev.turnId !== v.you && v.turnNo > prev.turnNo && JSON.stringify(v.table) !== JSON.stringify(prev.table)) {
+      this.slowFlag = true;
+      const had = new Set(prev.table.flatMap((x) => x.tiles));
+      const fresh = v.table.reduce((n, x) => n + x.tiles.filter((t) => !had.has(t)).length, 0);
+      this.busyUntil = performance.now() + animMsFor(fresh);
+      window.clearTimeout(this.busyTimer);
+      this.busyTimer = window.setTimeout(() => this.afterBusy(), animMsFor(fresh) + 60);
+    }
     const sig = `${v.phase}|${v.turnNo}|${JSON.stringify(v.table)}|${v.rack.slice().sort((a, b) => a - b).join(',')}`;
     if (sig !== this.sig) {
       this.sig = sig;
@@ -257,7 +284,8 @@ export class GameScreen {
     if (v.turnId !== this.lastTurnId) {
       this.lastTurnId = v.turnId;
       if (v.turnId === v.you && v.phase === 'playing') {
-        this.startTurnAlert();
+        if (this.busy()) this.stopTurnAlert();
+        else this.startTurnAlert();
       } else this.stopTurnAlert();
     }
     const ids = v.players.filter((p) => !p.left && p.connected).map((p) => p.id);
@@ -283,7 +311,7 @@ export class GameScreen {
   }
 
   private onPick(id: number): void {
-    if (!this.draft || !this.myTurn() || !this.draft.rack.includes(id)) return;
+    if (!this.draft || !this.canPlay() || !this.draft.rack.includes(id)) return;
     if (this.selected.has(id)) this.selected.delete(id);
     else if (isJoker(id) && [...this.selected].some(isJoker)) return toast('Marque no máximo 1 coringa.');
     else this.selected.add(id);
@@ -293,7 +321,7 @@ export class GameScreen {
 
   private playSelected(): void {
     const d = this.draft;
-    if (!d || !this.myTurn()) return;
+    if (!d || !this.canPlay()) return;
     const r = arrangeTiles([...this.selected], d.melded);
     if (!r.ok) return toast(r.reason);
     this.selected.clear();
@@ -316,7 +344,7 @@ export class GameScreen {
   }
 
   private onBoardDrop(id: number, cx: number, cz: number): void {
-    if (!this.draft || !this.myTurn()) return this.sync();
+    if (!this.draft || !this.canPlay()) return this.sync();
     if (!this.draft.melded && this.draft.table.some((s) => s.tiles.includes(id)) && !this.draft.placed.has(id)) return this.deny();
     const act = resolveBoardDrop(tableWithoutTile(this.draft.table, id), cx, cz);
     if (act.kind === 'insert') {
@@ -343,7 +371,7 @@ export class GameScreen {
   }
 
   private sendDraft(): void {
-    if (!this.myTurn() || !this.draft) return;
+    if (!this.canPlay() || !this.draft) return;
     window.clearTimeout(this.draftTimer);
     this.draftTimer = window.setTimeout(() => this.draft && this.b.draft(relayout(this.draft.table), this.checkpoint), 180);
   }
@@ -387,7 +415,7 @@ export class GameScreen {
 
   private doConfirm(): void {
     const d = this.draft;
-    if (!d || !this.myTurn()) return;
+    if (!d || !this.canPlay()) return;
     const st = draftStatus(d);
     if (!st.check.ok) return toast(st.check.reason);
     this.b.submit(relayout(d.table));
@@ -395,7 +423,7 @@ export class GameScreen {
 
   private requestDraw(): void {
     const v = this.view;
-    if (!v || !this.myTurn()) return toast('Aguarde a sua vez.');
+    if (!v || !this.canPlay()) return toast(this.myTurn() ? 'Aguarde a jogada terminar de aparecer.' : 'Aguarde a sua vez.');
     if (v.poolCount === 0) {
       if (!window.confirm('O pote está vazio. Passar a vez?')) return;
     } else if (this.draft && isDirty(this.draft) && !window.confirm('Desfazer o que você montou e comprar uma pedra?')) return;
@@ -420,7 +448,7 @@ export class GameScreen {
       rack: d.rack,
       placed: this.remoteDraft ? new Set() : d.placed,
       valid,
-      canEditBoard: this.myTurn(),
+      canEditBoard: this.canPlay(),
       mode: this.mode,
       poolCount: v.poolCount,
       selected: this.selected,
@@ -646,7 +674,7 @@ export class GameScreen {
     const sortNum = mk('123', 'Por número', 'Ordenar o cavalete por número', () => this.draft && this.apply(sortRack(this.draft, 'num')));
     const sortCol = mk('🎨', 'Por cor', 'Ordenar o cavalete por cor', () => this.draft && this.apply(sortRack(this.draft, 'color')));
     const tidy = mk('▦', 'Arrumar', 'Arrumar a mesa em linhas', () => {
-      if (!this.draft || !this.myTurn()) return;
+      if (!this.draft || !this.canPlay()) return;
       if (this.draft.table.some((t) => this.lockedSet(this.draft!, t.tiles))) return this.deny();
       this.apply(tidyTable(this.draft), 'Não coube na mesa.');
     });
@@ -682,7 +710,7 @@ export class GameScreen {
     const v = this.view;
     const d = this.draft;
     if (!v || !d) return;
-    const mine = this.myTurn();
+    const mine = this.canPlay();
     this.actionbar.classList.toggle('hidden', v.phase !== 'playing');
     for (const [m, b] of this.modeBtns) b.classList.toggle('active', m === this.mode);
     this.btnUndo.disabled = !mine || this.undo.length === 0;
@@ -695,7 +723,9 @@ export class GameScreen {
     const dirty = isDirty(d);
     this.btnConfirm.disabled = !mine || !st.check.ok;
     let text = '';
-    if (!mine) {
+    if (!mine && this.myTurn()) {
+      text = 'Aguarde: a jogada anterior está aparecendo…';
+    } else if (!mine) {
       const who = v.players.find((p) => p.id === v.turnId)?.name;
       text = who ? `Vez de ${who}` : '';
     } else if (!dirty) {
