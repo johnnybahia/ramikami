@@ -177,7 +177,7 @@ function offlinePanel(a: MenuActions): void {
       h('label', { class: 'lbl', text: 'Nível dos bots' }),
       segmented(BOT_LEVELS.map((l) => ({ value: l, label: LEVEL_CFG[l].label })), cfg.level, (v) => (cfg.level = v)),
       h('label', { class: 'lbl', text: 'Tempo por jogada (bots sempre 30s)' }),
-      segmented([{ value: 30, label: '30s' }, { value: 60, label: '60s' }, { value: 0, label: 'Sem limite' }] as const, cfg.turnSeconds, (v) => (cfg.turnSeconds = v)),
+      segmented([{ value: 60, label: '60s' }, { value: 120, label: '120s' }, { value: 0, label: 'Sem limite' }] as const, cfg.turnSeconds, (v) => (cfg.turnSeconds = v)),
       h('div', { class: 'row' }, btn('Começar', () => { saveOfflineSettings(cfg); m.close(); a.startOffline(cfg); }, 'primary'), btn('Cancelar', () => m.close(), 'ghost')),
     ),
   );
@@ -204,7 +204,7 @@ function onlinePanel(a: MenuActions): void {
     try {
       const rooms = await listRooms();
       if (rooms.length === 0) list.append(h('p', { class: 'muted', text: 'Nenhuma sala pública aberta agora.' }));
-      for (const r of rooms) list.append(h('button', { class: 'room', attrs: { type: 'button' }, on: { click: () => join(r.code) } }, h('b', { text: r.code }), h('span', { text: `${r.hostName} · ${r.count}/4 · ${turnLabel(r.turnSeconds)}` })));
+      for (const r of rooms) list.append(h('button', { class: 'room', attrs: { type: 'button' }, on: { click: () => join(r.code) } }, h('span', { class: 'room-code' }, h('small', { text: 'SALA' }), h('b', { text: r.code })), h('span', { class: 'room-info' }, h('b', { class: 'room-host', text: `♛ ${r.hostName}` }), h('small', { text: `${r.count}/4 · ${turnLabel(r.turnSeconds)}` }))));
     } catch {
       list.append(h('p', { class: 'muted', text: 'Sem conexão com o servidor.' }));
     }

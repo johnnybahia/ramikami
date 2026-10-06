@@ -61,12 +61,12 @@ const OFFLINE_KEY = 'ramikami_offline_v1';
 export interface OfflineSettings {
   bots: 1 | 2 | 3;
   level: BotLevel;
-  turnSeconds: 0 | 30 | 60;
+  turnSeconds: 0 | 60 | 120;
 }
 export function loadOfflineSettings(): OfflineSettings {
   try {
     const s = JSON.parse(localStorage.getItem(OFFLINE_KEY) ?? '{}') as Partial<OfflineSettings>;
-    return { bots: s.bots === 2 || s.bots === 3 ? s.bots : 1, level: BOT_LEVELS.includes(s.level as BotLevel) ? (s.level as BotLevel) : 'normal', turnSeconds: s.turnSeconds === 30 || s.turnSeconds === 0 ? s.turnSeconds : 60 };
+    return { bots: s.bots === 2 || s.bots === 3 ? s.bots : 1, level: BOT_LEVELS.includes(s.level as BotLevel) ? (s.level as BotLevel) : 'normal', turnSeconds: s.turnSeconds === 120 || s.turnSeconds === 0 ? s.turnSeconds : 60 };
   } catch {
     return { bots: 1, level: 'normal', turnSeconds: 60 };
   }

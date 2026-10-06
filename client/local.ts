@@ -1,10 +1,10 @@
 import type { Backend, BackendEvents } from './backend';
 import { noopEvents } from './backend';
-import { BOT_TURN_SECONDS } from '../shared/protocol';
+import { ANIM_SAFETY_MS, BOT_TURN_SECONDS, animMsFor } from '../shared/protocol';
 import { LEVEL_CFG, botMove, personaOfBotId, pickBots, thinkDelayMs } from '../shared/bot';
 import { createGame, currentPlayer, drawTurn, playTurn, salvagePlay, type GameState } from '../shared/game';
 import { mulberry32 } from '../shared/tiles';
-import type { SetState } from '../shared/layout';
+import { animCounts, type SetState } from '../shared/layout';
 import type { RoomPlayer, RoomView, TurnSeconds } from '../shared/protocol';
 import type { OfflineSettings, Profile } from './store';
 
@@ -62,7 +62,7 @@ export class LocalBackend implements Backend {
       code: 'OFFLINE',
       phase: g.phase,
       hostId: this.profile.id,
-      turnSeconds: (this.cfg.turnSeconds || 60) as TurnSeconds,
+      turnSeconds: this.cfg.turnSeconds as TurnSeconds,
       bestOf: 3,
       orderLocked: false,
       isPublic: false,
@@ -79,7 +79,8 @@ export class LocalBackend implements Backend {
     };
   }
 
-  private afterChange(): void {
+  /** `bonusMs`: tempo da animação da jogada que acabou de acontecer; o relógio e o bot seguinte só contam depois dele. */
+  private afterChange(bonusMs = 0): void {
     this.draftTable = null;
     this.checkpoint = null;
     window.clearTimeout(this.timer);
@@ -95,12 +96,12 @@ export class LocalBackend implements Backend {
       this.turnEndsAt = null;
       this.events.onView(this.view());
       const persona = personaOfBotId(cur.id) ?? LEVEL_CFG[this.cfg.level];
-      this.timer = window.setTimeout(() => this.botTurn(), thinkDelayMs(persona, BOT_TURN_SECONDS));
+      this.timer = window.setTimeout(() => this.botTurn(), bonusMs + thinkDelayMs(persona, BOT_TURN_SECONDS));
       return;
     }
-    this.turnEndsAt = this.cfg.turnSeconds ? Date.now() + this.cfg.turnSeconds * 1000 : null;
+    this.turnEndsAt = this.cfg.turnSeconds ? Date.now() + bonusMs + this.cfg.turnSeconds * 1000 : null;
     this.events.onView(this.view());
-    if (this.turnEndsAt) this.timer = window.setTimeout(() => this.timeout(), this.cfg.turnSeconds * 1000);
+    if (this.turnEndsAt) this.timer = window.setTimeout(() => this.timeout(), bonusMs + this.cfg.turnSeconds * 1000);
   }
 
   private botTurn(): void {
@@ -109,8 +110,10 @@ export class LocalBackend implements Backend {
     const persona = personaOfBotId(cur.id) ?? LEVEL_CFG[this.cfg.level];
     const move = botMove(this.game, persona);
     const step = move ? playTurn(this.game, cur.id, move) : drawTurn(this.game, cur.id);
+    const before = this.game.table;
     this.game = step.ok ? step.state : (drawTurn(this.game, cur.id) as { ok: true; state: GameState }).state;
-    this.afterChange();
+    const ac = animCounts(before, this.game.table);
+    this.afterChange(ac.fresh + ac.moved > 0 ? animMsFor(ac.fresh, ac.moved) + ANIM_SAFETY_MS : 0);
   }
 
   private timeout(): void {

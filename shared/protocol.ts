@@ -6,7 +6,7 @@ export type { BotLevel };
 
 export const MAX_ROOM_PLAYERS = 4;
 /** tempo por jogada dos HUMANOS em segundos (0 = sem limite). Bots sempre usam BOT_TURN_SECONDS. */
-export const TURN_SECONDS_OPTIONS = [60, 30, 0] as const;
+export const TURN_SECONDS_OPTIONS = [60, 120, 0] as const;
 export const BOT_TURN_SECONDS = 30;
 /**
  * Tempo que a tela leva para mostrar, pedra por pedra, uma jogada de `placed` pedras (animação lenta dos outros).
@@ -15,6 +15,8 @@ export const BOT_TURN_SECONDS = 30;
 /** Cada pedra nova leva ANIM_NEW_MS para entrar na tela; cada pedra que só muda de lugar, ANIM_MOVE_MS (uma de cada vez). */
 export const ANIM_NEW_MS = 1100;
 export const ANIM_MOVE_MS = 700;
+/** Folga que o servidor soma ao relógio além da animação, para a contagem nunca começar antes da última pedra cair. */
+export const ANIM_SAFETY_MS = 1000;
 export const animMsFor = (fresh: number, moved = 0): number => (fresh + moved <= 0 ? 0 : Math.min(24000, 300 + fresh * ANIM_NEW_MS + moved * ANIM_MOVE_MS) + 1500);
 export const turnLabel = (s: number): string => (s === 0 ? 'Sem limite' : `${s}s`);
 export type TurnSeconds = (typeof TURN_SECONDS_OPTIONS)[number];
