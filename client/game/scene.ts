@@ -50,9 +50,9 @@ type Interaction =
 
 const ELEV = THREE.MathUtils.degToRad(64);
 const FOV = 38;
-const DRAG_THRESHOLD = 7;
+const DRAG_THRESHOLD = 10;
 const HOLD_MS = 330;
-const HOLD_SLOP = 12;
+const HOLD_SLOP = 10;
 const DOUBLE_TAP_MS = 380;
 
 export class TableScene {
@@ -868,9 +868,13 @@ export class TableScene {
     if (!it) return;
     if (it.type === 'hold') {
       if (Math.hypot(p.x - it.startX, p.y - it.startY) > HOLD_SLOP) {
+        // arrastar a pedra da mesa já a leva (sem precisar segurar antes); para rolar a mesa, arraste no pano vazio
         window.clearTimeout(it.timer);
-        this.it = null;
-        this.startPan(p);
+        this.it = { type: 'tile', id: it.id, startX: it.startX, startY: it.startY, active: true };
+        this.tiles[it.id]!.dragging = true;
+        navigator.vibrate?.(12);
+        this.dragTile(it.id, p);
+        this.dirty = true;
       }
       return;
     }

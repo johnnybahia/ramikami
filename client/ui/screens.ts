@@ -396,7 +396,7 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
       h('label', { class: 'lbl', text: 'Mesa' }),
       skinPicker,
       logoRow,
-      h('p', { class: 'hint', text: 'Na mesa: arraste para rolar, pince ou use ＋ − para aproximar, toque duas vezes num conjunto para ampliá-lo. Para mover uma pedra, segure o dedo nela até vibrar.' }),
+      h('p', { class: 'hint', text: 'Na mesa: arraste o pano vazio para rolar, pince ou use ＋ − para aproximar, toque duas vezes num conjunto para ampliá-lo. Para mover uma pedra da mesa, arraste a própria pedra; para rolar a mesa, arraste no pano vazio.' }),
       h('div', { class: 'row' }, btn('Pronto', () => m.close(), 'primary')),
     ),
   );
