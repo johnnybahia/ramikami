@@ -50,9 +50,9 @@ type Interaction =
 
 const ELEV = THREE.MathUtils.degToRad(64);
 const FOV = 38;
-const DRAG_THRESHOLD = 7;
+const DRAG_THRESHOLD = 10;
 const HOLD_MS = 330;
-const HOLD_SLOP = 12;
+const HOLD_SLOP = 10;
 const DOUBLE_TAP_MS = 380;
 
 export class TableScene {
@@ -312,7 +312,8 @@ export class TableScene {
 
   private ndc(region: Region, x: number, y: number): THREE.Vector2 {
     if (region === 'rack') return new THREE.Vector2((x / this.W) * 2 - 1, -(((y - (this.H - this.rackH)) / this.rackH) * 2 - 1));
-    return new THREE.Vector2((x / this.W) * 2 - 1, -((y / this.boardH()) * 2 - 1));
+    // com setViewOffset o NDC é relativo à janela inteira da mesa (R), não à parte livre acima da barra (V)
+    return new THREE.Vector2((x / this.W) * 2 - 1, -((y / Math.max(1, this.H - this.rackH)) * 2 - 1));
   }
 
   private ground(region: Region, x: number, y: number): THREE.Vector3 | null {
@@ -330,7 +331,7 @@ export class TableScene {
     const cam = region === 'rack' ? this.rackCam : this.boardCam;
     cam.updateMatrixWorld();
     const top = this.rackH > 0 ? (region === 'rack' ? this.H - this.rackH : 0) : 0;
-    const hgt = region === 'rack' ? this.rackH : this.boardH();
+    const hgt = region === 'rack' ? this.rackH : Math.max(1, this.H - this.rackH);
     const toPx = (v: THREE.Vector3): { sx: number; sy: number } => ({ sx: ((v.x + 1) / 2) * this.W, sy: top + ((1 - v.y) / 2) * hgt });
     const c = new THREE.Vector3();
     const e = new THREE.Vector3();
@@ -652,8 +653,10 @@ export class TableScene {
       this.fitted = true;
     }
     const empty = sets.length === 0;
-    const w = (empty ? Math.max(maxX - minX, 11) : maxX - minX) + 1.6;
-    const h = (empty ? Math.max(maxZ - minZ, 5) : maxZ - minZ) + 0.8;
+    // na minha vez sobra um respiro em volta dos jogos, para ter onde soltar um jogo novo
+    const room = this.state.canEditBoard ? 1 : 0;
+    const w = (empty ? Math.max(maxX - minX, 11) : maxX - minX) + 1.6 + room * CELL_W * 4;
+    const h = (empty ? Math.max(maxZ - minZ, 5) : maxZ - minZ) + 0.8 + room * ROW_D * 1.6;
     const aspect = this.W / this.boardH();
     const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
     let dist = Math.max(8, Math.min(75, Math.max(w / 2 / (t * aspect), h / 2 / (t * Math.sin(ELEV)))));
@@ -701,11 +704,14 @@ export class TableScene {
   private allVisible(): boolean {
     this.boardCam.updateMatrixWorld();
     const v = new THREE.Vector3();
+    // o NDC é da janela inteira (R); a parte livre acima da barra de ações é só a fração V/R de cima
+    const free = this.boardH() / Math.max(1, this.H - this.rackH);
+    const yMin = 1 - 2 * 0.97 * free;
     for (const s of this.state.table) {
       for (const idx of [0, s.tiles.length - 1]) {
         const p = this.boardPos(s.x, idx, s.z);
         v.set(p.x, TILE_H, p.z).project(this.boardCam);
-        if (Math.abs(v.x) > 0.94 || v.y > 0.94 || v.y < -0.94) return false;
+        if (Math.abs(v.x) > 0.94 || v.y > 0.94 || v.y < yMin) return false;
       }
     }
     return true;
@@ -862,9 +868,13 @@ export class TableScene {
     if (!it) return;
     if (it.type === 'hold') {
       if (Math.hypot(p.x - it.startX, p.y - it.startY) > HOLD_SLOP) {
+        // arrastar a pedra da mesa já a leva (sem precisar segurar antes); para rolar a mesa, arraste no pano vazio
         window.clearTimeout(it.timer);
-        this.it = null;
-        this.startPan(p);
+        this.it = { type: 'tile', id: it.id, startX: it.startX, startY: it.startY, active: true };
+        this.tiles[it.id]!.dragging = true;
+        navigator.vibrate?.(12);
+        this.dragTile(it.id, p);
+        this.dirty = true;
       }
       return;
     }

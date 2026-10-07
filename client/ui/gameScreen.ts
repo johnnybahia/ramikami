@@ -758,7 +758,7 @@ export class GameScreen {
     const sortNum = mk('123', 'Por número', 'Ordenar o cavalete por número', () => this.draft && this.apply(sortRack(this.draft, 'num')));
     const sortCol = mk('🎨', 'Por cor', 'Ordenar o cavalete por cor', () => this.draft && this.apply(sortRack(this.draft, 'color')));
     const modeDefs: [Mode, string, string, string][] = [
-      ['tile', '✋', 'Mover', 'Mover pedra (segure o dedo na pedra da mesa)'],
+      ['tile', '✋', 'Mover', 'Mover pedra (arraste a pedra da mesa; para rolar a mesa arraste no pano vazio)'],
       ['pick', '☑', 'Selecionar', 'Selecionar pedras: do cavalete para jogar juntas, ou um trecho de um conjunto da mesa para arrastar'],
     ];
     const modeBtns: HTMLButtonElement[] = [];
