@@ -136,7 +136,12 @@ export class TableScene {
     this.canvas.addEventListener('pointerdown', this.onDown);
     this.canvas.addEventListener('pointermove', this.onMove);
     this.canvas.addEventListener('pointerup', this.onUp);
-    this.canvas.addEventListener('pointercancel', this.onUp);
+    this.canvas.addEventListener('pointercancel', this.onCancel);
+    this.canvas.addEventListener('lostpointercapture', this.onCancel);
+    // se o dedo sai da tela/janela o canvas pode não receber o "soltou": estes ouvintes garantem que o toque acabe
+    window.addEventListener('pointerup', this.onUp);
+    window.addEventListener('pointercancel', this.onCancel);
+    window.addEventListener('blur', this.onBlur);
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     this.ro = new ResizeObserver(() => this.resize());
@@ -772,7 +777,17 @@ export class TableScene {
   }
 
   private onDown = (e: PointerEvent): void => {
-    this.canvas.setPointerCapture(e.pointerId);
+    // um toque primário só começa quando não há nenhum outro dedo na tela: sobras de toques perdidos são descartadas
+    // (senão o próximo toque virava "segundo dedo" e só o zoom por pinça funcionava)
+    if (e.isPrimary && this.pointers.size > 0) {
+      this.pointers.clear();
+      this.cancelActive();
+    }
+    try {
+      this.canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* toque já terminou */
+    }
     const p = this.rel(e);
     this.lastP = p;
     this.pointers.set(e.pointerId, p);
@@ -1004,6 +1019,7 @@ export class TableScene {
   }
 
   private onUp = (e: PointerEvent): void => {
+    if (!this.pointers.has(e.pointerId)) return; // já tratado (o canvas e a janela recebem o mesmo "soltou")
     const p = this.rel(e);
     this.pointers.delete(e.pointerId);
     const it = this.it;
@@ -1047,7 +1063,10 @@ export class TableScene {
           const n = this.state.rack.length - (this.state.rack.includes(it.id) ? 1 : 0);
           this.handlers.onRackDrop(it.id, this.rackIndexAt(g.x, g.z, n));
         } else if (this.state.canEditBoard) {
-          this.handlers.onBoardDrop(it.id, g.x / CELL_W + COLS / 2, g.z / ROW_D + ROWS / 2);
+          const cx = g.x / CELL_W + COLS / 2;
+          const cz = g.z / ROW_D + ROWS / 2;
+          // soltar bem fora da mesa (cabeçalho, fora da tela, além da borda) não vale: a pedra volta para onde estava
+          if (p.y >= 0 && p.y <= this.boardH() && p.x >= 0 && p.x <= this.W && cx > -1 && cx < COLS + 1 && cz > -1 && cz < ROWS + 1) this.handlers.onBoardDrop(it.id, cx, cz);
         }
       }
       this.tileScene[it.id] = null; // força reposicionamento limpo
@@ -1070,6 +1089,27 @@ export class TableScene {
   private onVis = (): void => {
     this.lastT = performance.now();
     this.dirty = true;
+    if (document.hidden) this.resetPointers();
+  };
+
+  private onBlur = (): void => this.resetPointers();
+
+  /** Zera toques "fantasma" (soltar fora da tela, gesto do sistema): a pedra volta para onde estava. */
+  private resetPointers(): void {
+    if (this.pointers.size === 0 && !this.it) return;
+    this.pointers.clear();
+    this.cancelActive();
+  }
+
+  /** O sistema cancelou o toque (ex.: gesto de borda do iOS): nada é solto, a pedra volta para onde estava. */
+  private onCancel = (e: PointerEvent): void => {
+    if (!this.pointers.has(e.pointerId)) return;
+    this.pointers.delete(e.pointerId);
+    if (this.it?.type === 'pinch') {
+      if (this.pointers.size < 2) this.it = null;
+      return;
+    }
+    this.cancelActive();
   };
 
   private loop = (now: number): void => {
@@ -1121,6 +1161,9 @@ export class TableScene {
     this.offSkin();
     this.ro.disconnect();
     document.removeEventListener('visibilitychange', this.onVis);
+    window.removeEventListener('pointerup', this.onUp);
+    window.removeEventListener('pointercancel', this.onCancel);
+    window.removeEventListener('blur', this.onBlur);
     this.canvas.remove();
     this.renderer.dispose();
   }
