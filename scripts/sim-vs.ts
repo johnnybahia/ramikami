@@ -11,6 +11,7 @@ const arg = process.argv[2] ?? 'baseline';
 const N = Number(process.argv[3] ?? 200);
 const PLAYERS = Number(process.argv[4] ?? 2);
 const MAX_TURNS = 700;
+const SEED0 = Number(process.env.SEED ?? 5000); // outra semente para confirmar resultados
 
 const cand: MoveFn = arg === 'baseline' ? masterMove : ((await import(resolve(arg))) as { botMove: MoveFn }).botMove;
 
@@ -34,7 +35,7 @@ let wins = 0, games = 0, ptsC = 0, ptsM = 0, turns = 0, jokersOnTable = 0, empti
 for (let i = 0; i < N; i++) {
   const seat = i % PLAYERS; // alterna o lugar do candidato
   const t0 = performance.now();
-  const g = play(seat, 5000 + i);
+  const g = play(seat, SEED0 + i);
   maxMs = Math.max(maxMs, performance.now() - t0);
   if (g.phase !== 'ended' || !g.result) continue;
   games++;
