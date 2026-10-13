@@ -74,6 +74,9 @@ export class GameScreen {
   private slowFlag = false;
   /** até quando a animação lenta da jogada de outro jogador ainda está rolando (a minha vez só libera depois) */
   private busyTurnNo = -1;
+  /** quem estava jogando enquanto a jogada dele ainda aparece: a marca da vez só passa para o próximo depois */
+  private busyPrevTurn: string | null = null;
+  private alarm = h('div', { class: 'time-alarm' });
   private busyUntil = 0;
   private busyTimer = 0;
   private selected = new Set<number>();
@@ -117,7 +120,7 @@ export class GameScreen {
     this.b = o.backend;
     document.body.append(this.root);
     this.head.append(this.menuBtn, this.boxLayer, this.timerPill);
-    this.root.append(this.stage, this.head, this.chatBubble, this.actionbar, this.overlay, this.connEl);
+    this.root.append(this.stage, this.head, this.chatBubble, this.actionbar, this.overlay, this.connEl, this.alarm);
     this.scene = new TableScene(this.stage, {
       onRackDrop: (id, i) => this.onRackDrop(id, i),
       onBoardDrop: (id, cx, cz) => this.onBoardDrop(id, cx, cz),
@@ -228,8 +231,18 @@ export class GameScreen {
     return this.myTurn() && !this.busy();
   }
 
+  /** Jogador destacado como "da vez": durante a animação da jogada anterior continua sendo o que acabou de jogar. */
+  private shownTurnId(): string | null {
+    const v = this.view;
+    if (!v || v.phase !== 'playing') return v?.turnId ?? null;
+    return this.busy() && this.busyPrevTurn ? this.busyPrevTurn : v.turnId;
+  }
+
   private afterBusy(): void {
     if (!this.view) return;
+    this.busyPrevTurn = null;
+    this.renderBoxes();
+    this.tickUi();
     this.sync();
     this.updateActions();
     if (this.myTurn()) this.startTurnAlert();
@@ -272,6 +285,7 @@ export class GameScreen {
       const ms = animMsFor(ac.fresh, ac.moved);
       this.busyUntil = performance.now() + ms;
       this.busyTurnNo = v.turnNo;
+      this.busyPrevTurn = prev.turnId;
       window.clearTimeout(this.busyTimer);
       this.busyTimer = window.setTimeout(() => this.afterBusy(), ms + 60);
     }
@@ -642,16 +656,22 @@ export class GameScreen {
         if (this.busyTurnNo === v.turnNo) remaining = Math.min(remaining, Math.max(0, Math.ceil(limit - (performance.now() - this.busyUntil) / 1000)));
       }
     }
-    this.timerPill.classList.toggle('hidden', remaining === null || v.phase !== 'playing');
-    if (remaining !== null) {
+    const shown = this.shownTurnId();
+    const waiting = shown !== v.turnId; // a jogada anterior ainda está aparecendo: o relógio do próximo ainda não conta
+    this.timerPill.classList.toggle('hidden', remaining === null || v.phase !== 'playing' || waiting);
+    if (remaining !== null && !waiting) {
       this.timerPill.textContent = `⏱ ${remaining}s`;
       this.timerPill.classList.toggle('danger', remaining <= 10);
       if (remaining <= 5 && remaining > 0 && this.myTurn()) navigator.vibrate?.(20);
     }
+    // fim do tempo na minha vez: contorno vermelho piscando na tela toda
+    const alarmOn = !waiting && this.canPlay() && remaining !== null && remaining > 0 && remaining <= 10;
+    this.alarm.classList.toggle('on', alarmOn);
+    this.alarm.classList.toggle('fast', alarmOn && remaining !== null && remaining <= 5);
     for (const p of v.players) {
       const box = this.boxes.get(p.id);
       if (!box) continue;
-      const active = v.phase === 'playing' && v.turnId === p.id;
+      const active = v.phase === 'playing' && shown === p.id && !waiting;
       const total = p.bot ? BOT_TURN_SECONDS : v.turnSeconds;
       box.el.style.setProperty('--p', active && remaining !== null && total > 0 ? String(Math.min(100, Math.round((remaining / total) * 100))) : active ? '100' : '0');
     }
@@ -708,7 +728,7 @@ export class GameScreen {
       seen.add(p.id);
       const box = this.ensureBox(p);
       this.boxLayer.append(box.el);
-      box.el.className = `pbox${v.turnId === p.id ? ' turn' : ''}${p.connected ? '' : ' offline'}${p.id === meId ? ' me' : ''}`;
+      box.el.className = `pbox${this.shownTurnId() === p.id ? ' turn' : ''}${p.connected ? '' : ' offline'}${p.id === meId ? ' me' : ''}`;
       box.name.textContent = `${p.isHost ? '♛ ' : ''}${p.name}`;
       box.meta.textContent = v.phase === 'lobby' ? (p.connected ? '' : 'offline') : `${p.rackCount}${p.melded ? ' ✓' : ''}`;
       const bp = personaOfBotId(p.id);
@@ -802,7 +822,7 @@ export class GameScreen {
     if (!mine && this.myTurn()) {
       text = 'Aguarde: a jogada anterior está aparecendo…';
     } else if (!mine) {
-      const who = v.players.find((p) => p.id === v.turnId)?.name;
+      const who = v.players.find((p) => p.id === this.shownTurnId())?.name;
       text = who ? `Vez de ${who}` : '';
     } else if (!dirty) {
       text = d.melded ? 'Monte jogadas ou compre' : `Abra com ${MELD_MIN}+ pontos`;
