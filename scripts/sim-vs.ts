@@ -15,6 +15,7 @@ const SEED0 = Number(process.env.SEED ?? 5000); // outra semente para confirmar 
 
 const cand: MoveFn = arg === 'baseline' ? masterMove : ((await import(resolve(arg))) as { botMove: MoveFn }).botMove;
 
+const stat = { invalid: 0, moves: 0, plays: 0, draws: 0, ms: 0, maxMove: 0, drawsWithPlay: 0 };
 function play(candSeat: number, seed: number) {
   const rng = mulberry32(seed);
   let g: GameState = createGame(Array.from({ length: PLAYERS }, (_, i) => ({ id: `p${i}`, name: `p${i}`, isBot: true })), rng);
@@ -22,8 +23,18 @@ function play(candSeat: number, seed: number) {
   while (g.phase === 'playing' && guard++ < MAX_TURNS) {
     const cur = currentPlayer(g);
     const mine = Number(cur.id.slice(1)) === candSeat;
+    const t0 = performance.now();
     const t = (mine ? cand : masterMove)(g, LEVEL_CFG.master, rng);
+    const dt = performance.now() - t0;
     let step = t ? playTurn(g, cur.id, t) : null;
+    if (mine) {
+      stat.moves++;
+      stat.ms += dt;
+      stat.maxMove = Math.max(stat.maxMove, dt);
+      if (t && step && !step.ok) stat.invalid++; // jogada inválida cai em "comprar" sem aviso: precisa ser 0
+      if (step && step.ok) stat.plays++;
+      else stat.draws++;
+    }
     if (!step || !step.ok) step = drawTurn(g, cur.id);
     if (!step.ok) break;
     g = step.state;
@@ -59,5 +70,6 @@ console.log(JSON.stringify({
   vitoriasCandidato: +(p * 100).toFixed(1), ic95: [+(lo * 100).toFixed(1), +(hi * 100).toFixed(1)],
   pontosMediosCandidato: +(ptsC / n).toFixed(1), pontosMediosMestre: +(ptsM / n).toFixed(1),
   turnosMedios: +(turns / n).toFixed(0), coringasNaMesaAoFim: +(jokersOnTable / n).toFixed(2),
+  jogadasInvalidasDoCandidato: stat.invalid, comprasDoCandidato: stat.draws, jogadasDoCandidato: stat.plays, msMedioPorJogada: +(stat.ms / Math.max(stat.moves, 1)).toFixed(1), msMaxPorJogada: Math.round(stat.maxMove),
   fimPorMaoVazia: emptied, mãoVaziaDoCandidato: candEmptied, maiorPartidaMs: Math.round(maxMs),
 }));
