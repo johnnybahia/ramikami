@@ -349,3 +349,12 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .room .room-info small { font-size: 0.75rem; color: var(--muted); }
 
 .btn.confirm.dim { opacity: 0.45; filter: saturate(0.5); }
+
+/* relógio maior e aviso de fim do tempo */
+.head .pill.timer { min-height: 44px; padding: 4px 10px; font-size: 1.35rem; font-weight: 800; letter-spacing: 0.02em; }
+.head .pill.timer.danger { background: #d62a1c; color: #fff; border-color: #ff9a8c; font-size: 1.5rem; }
+.time-alarm { position: fixed; inset: 0; z-index: 60; pointer-events: none; opacity: 0; box-shadow: inset 0 0 0 7px #ff2b1c, inset 0 0 46px 12px rgba(255, 43, 28, 0.6); }
+.time-alarm.on { animation: alarm 1s steps(1, end) infinite; }
+.time-alarm.on.fast { animation-duration: 0.5s; }
+@keyframes alarm { 0% { opacity: 1; } 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .time-alarm.on { animation: none; opacity: 0.9; } }
