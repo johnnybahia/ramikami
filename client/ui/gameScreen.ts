@@ -333,6 +333,7 @@ export class GameScreen {
     const before = loadProgress();
     const after = addWin(before, kind);
     saveProgress(after);
+    if (kind === 'grandmaster') return; // vitória contra Grão-mestre fica registrada, mas não conta para liberar
     if (!isGmUnlocked(before) && isGmUnlocked(after)) toast('🔓 Grão-mestre liberado! Escolha-o em "Nível dos bots".', 6000);
     else if (!isGmUnlocked(after)) toast(`Vitória contra o Mestre: ${after.masterWins}/${GM_UNLOCK_WINS} para liberar o Grão-mestre.`, 4500);
   }

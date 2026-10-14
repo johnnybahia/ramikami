@@ -401,9 +401,10 @@ describe('animação da jogada', () => {
 describe('progresso do Grão-mestre', () => {
   const pl = (...levels: (string | null)[]) => levels.map((l, i) => ({ id: l ? `bot${i}` : 'eu', bot: !!l, left: false, level: l ?? undefined }));
   const facts = (players: ReturnType<typeof pl>, winners: string[], reason = 'empty') => ({ you: 'eu', winners, reason, players });
-  it('só conta vitória do jogador contra bots Mestre ou acima, com fim normal', () => {
+  it('só conta vitória do jogador contra bots de um mesmo nível Mestre ou Grão-mestre, com fim normal', () => {
     expect(winKind(facts(pl(null, 'master'), ['eu']))).toBe('master');
-    expect(winKind(facts(pl(null, 'master', 'grandmaster'), ['eu']))).toBe('master');
+    expect(winKind(facts(pl(null, 'master', 'master'), ['eu']))).toBe('master');
+    expect(winKind(facts(pl(null, 'master', 'grandmaster'), ['eu']))).toBeNull(); // níveis misturados não contam
     expect(winKind(facts(pl(null, 'grandmaster', 'grandmaster'), ['eu']))).toBe('grandmaster');
     expect(winKind(facts(pl(null, 'master'), ['bot1']))).toBeNull(); // perdeu
     expect(winKind(facts(pl(null, 'hard'), ['eu']))).toBeNull(); // bot fraco
@@ -417,9 +418,11 @@ describe('progresso do Grão-mestre', () => {
     expect(isGmUnlocked(p)).toBe(false);
     expect(winsToUnlock(p)).toBe(1);
     expect(gmStatusText(p)).toContain(`${GM_UNLOCK_WINS - 1}/${GM_UNLOCK_WINS}`);
-    p = addWin(p, 'grandmaster');
-    expect(isGmUnlocked(p)).toBe(true);
+    p = addWin(p, 'grandmaster'); // vitória contra Grão-mestre não conta para liberar
+    expect(isGmUnlocked(p)).toBe(false);
     expect(p.gmWins).toBe(1);
+    p = addWin(p, 'master');
+    expect(isGmUnlocked(p)).toBe(true);
     expect(gmStatusText(p)).toContain('liberado');
   });
 });
