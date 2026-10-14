@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { analyzeSet, arrangeTiles, validatePlay } from './rules';
 import { createGame, drawTurn, playTurn, removePlayer, currentPlayer, salvagePlay } from './game';
 import { botMove, pickBots, PERSONAS, LEVEL_CFG, BOT_LEVELS } from './bot';
-import { GM_TUNING } from './grandmaster';
+import { GM_TUNING, personaBias } from './grandmaster';
+import { placedJokerRisk } from './jokerrisk';
 import { solveTable } from './solver';
 import { mulberry32, handPoints } from './tiles';
 import { COLS, animCounts, findCompactSpot, packRows, relayout, type SetState } from './layout';
@@ -214,10 +215,10 @@ describe('Grão-mestre', () => {
     expect(names).toEqual(['Yoda', 'Sun Tzu', 'Marie Curie', 'Einstein', 'Kame']);
     expect(LEVEL_CFG.grandmaster.engine).toBe('grandmaster');
   });
-  it('segura o coringa em vez de gastá-lo sem bater; o Mestre o gasta', () => {
+  it('segura o coringa em vez de gastá-lo sem bater; sem a guarda (Mestre clássico) o gasta', () => {
     const rack = [J1, T(1, 3), T(1, 4), T(2, 9), T(3, 12)];
     const g = mk(rack);
-    expect(botMove(g, LEVEL_CFG.master, mulberry32(1))).not.toBeNull();
+    expect(botMove(g, { ...LEVEL_CFG.master, gm: { hold: false, deepRack: 0 } }, mulberry32(1))).not.toBeNull();
     expect(botMove(g, LEVEL_CFG.grandmaster, mulberry32(1))).toBeNull();
   });
   it('usa o coringa quando isso esvazia o cavalete (bate)', () => {
@@ -251,21 +252,29 @@ describe('Grão-mestre', () => {
   }, 60000);
   it('o Mestre usa o motor de bater sem segurar o coringa, e o ajuste não vaza para o Grão-mestre', () => {
     expect(LEVEL_CFG.master.engine).toBe('grandmaster');
-    expect(LEVEL_CFG.master.gm).toEqual({ hold: true, relMe: 6, deepRack: 0 });
+    expect(LEVEL_CFG.master.gm).toEqual({ hold: true, relMe: 3, riskMax: 0.05, deepRack: 0 });
     expect(LEVEL_CFG.hard.engine).toBeUndefined();
     expect(LEVEL_CFG.hard.rearrangeChance).toBe(1);
     const g = mk([J1, T(1, 3), T(1, 4), T(2, 9), T(3, 12)]);
-    expect(botMove(g, LEVEL_CFG.master, mulberry32(1))).not.toBeNull(); // com 6 pedras ou menos solta o coringa
+    expect(botMove(g, LEVEL_CFG.master, mulberry32(1))).toBeNull(); // o coringa ficaria pegável: guarda
     expect(GM_TUNING.hold).toBe(true);
     expect(GM_TUNING.deepRack).toBe(2);
     expect(botMove(g, LEVEL_CFG.grandmaster, mulberry32(1))).toBeNull(); // o Grão-mestre continua segurando
   });
-  it('Mestre e Difícil guardam o coringa com mais de 6 pedras (sem jogada sem ele, compram) e o soltam com 6 ou menos', () => {
-    const many = [J1, T(1, 3), T(1, 4), T(2, 9), T(3, 12), T(2, 2), T(3, 5)]; // 7 pedras: a única jogada usa o coringa
+  it('Mestre e Difícil guardam o coringa quando ele ficaria pegável (compram) e o jogam quando fecha a partida', () => {
+    const many = [J1, T(1, 3), T(1, 4), T(2, 9), T(3, 12), T(2, 2), T(3, 5)]; // a única jogada põe o coringa onde a pedra exata é fácil de achar
     for (const lv of [LEVEL_CFG.master, LEVEL_CFG.hard]) {
       expect(botMove(mk(many), lv, mulberry32(1))).toBeNull();
-      expect(botMove(mk(many.slice(0, 6)), lv, mulberry32(1))).not.toBeNull();
+      expect(botMove(mk(many.slice(0, 6)), lv, mulberry32(1))).toBeNull();
+      expect(botMove(mk([J1, T(1, 3), T(1, 4)]), lv, mulberry32(1))).not.toBeNull(); // esvazia o cavalete: joga
     }
+  });
+  it('o jeito de cada personagem varia o limite de risco do coringa em torno da regra do nível', () => {
+    const bias = [0, 1, 2, 3, 4].map((slot) => personaBias({ ...LEVEL_CFG.master, slot } as typeof LEVEL_CFG.master));
+    expect(new Set(bias).size).toBeGreaterThan(3);
+    expect(Math.min(...bias)).toBeGreaterThan(0.5);
+    expect(Math.max(...bias)).toBeLessThan(1.5);
+    expect(personaBias(LEVEL_CFG.master)).toBe(1); // sem personagem: a regra pura do nível
   });
   it('partidas Difícil x Mestre terminam e nunca devolvem jogada inválida', () => {
     for (let seed = 1; seed <= 6; seed++) {
@@ -287,6 +296,36 @@ describe('Grão-mestre', () => {
       expect(g.phase).toBe('ended');
     }
   }, 60000);
+});
+
+describe('risco de pegarem o coringa solto', () => {
+  // 2 jogadores; o adversário tem 6 pedras e o pote 6: cada pedra oculta está na mão dele com chance 0,5
+  const st = (rack: number[]) => {
+    const g = createGame([{ id: 'a', name: 'A', isBot: true }, { id: 'b', name: 'B' }], mulberry32(5));
+    g.turn = 0;
+    g.players[0]!.rack = rack;
+    g.players[1]!.rack = [0, 1, 2, 3, 4, 5];
+    g.pool = [6, 7, 8, 9, 10, 11];
+    return g;
+  };
+  const table = (...sets: number[][]): SetState[] => sets.map((t, i) => S(i + 1, t, 0, i));
+  it('sai de graça (risco 1): ponta de sequência de 4, trinca de 4, meio com dois pedaços de 3', () => {
+    expect(placedJokerRisk(st([J1]), table([T(0, 5), T(0, 6), T(0, 7), J1]))).toBe(1);
+    expect(placedJokerRisk(st([J1]), table([T(0, 9), T(1, 9), T(2, 9), J1]))).toBe(1);
+    expect(placedJokerRisk(st([J1]), table([T(0, 1), T(0, 2), T(0, 3), J1, T(0, 5), T(0, 6), T(0, 7)]))).toBe(1);
+  });
+  it('precisa da pedra exata: o risco cai com as cópias que já vi, e some se as duas estão à vista', () => {
+    const run = table([T(0, 5), J1, T(0, 7)]); // o coringa vale 6 da cor 0
+    expect(placedJokerRisk(st([J1]), run)).toBeCloseTo(0.75, 5); // 2 cópias ocultas, 0,5 cada
+    expect(placedJokerRisk(st([J1, T(0, 6, 0)]), run)).toBeCloseTo(0.5, 5); // 1 cópia na minha mão
+    expect(placedJokerRisk(st([J1, T(0, 6, 0), T(0, 6, 1)]), run)).toBe(0);
+  });
+  it('trinca de 3 com coringa: vale a troca por qualquer das duas cores que faltam', () => {
+    expect(placedJokerRisk(st([J1]), table([T(0, 9), T(1, 9), J1]))).toBeCloseTo(1 - 0.25 * 0.25, 5);
+  });
+  it('sem coringa colocado, não há risco', () => {
+    expect(placedJokerRisk(st([T(0, 3)]), table([T(0, 5), T(0, 6), T(0, 7)]))).toBe(0);
+  });
 });
 
 describe('createGame: quem começa', () => {

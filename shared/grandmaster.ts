@@ -20,6 +20,7 @@ import { findCompactSpot, relayout, type SetState } from './layout';
 import type { GameState } from './game';
 import { key, packCounts, type Cand } from './pack';
 import { solveTable } from './solver';
+import { placedJokerRisk } from './jokerrisk';
 import type { LevelCfg } from './bot';
 
 // ---------------------------------------------------------------------------------------------
@@ -32,6 +33,8 @@ export interface Params {
   keepJ: number;
   /** solta o coringa se o meu cavalete tem <= relMe pedras (0 = nunca) */
   relMe: number;
+  /** solta o coringa se, onde ele vai ficar, a chance de o adversário pegá-lo é <= riskMax (0 = desligado; ver shared/jokerrisk.ts) */
+  riskMax: number;
   /** solta se algum oponente tem <= relOpp pedras (0 = nunca) */
   relOpp: number;
   /** solta se o coringa deixa colocar >= relGain pedras comuns a mais do que sem ele (99 = nunca) */
@@ -61,6 +64,7 @@ const DEFAULTS: Params = {
   hold: true,
   keepJ: 2,
   relMe: 0,
+  riskMax: 0,
   relOpp: 0,
   relGain: 99,
   relPool: 3,
@@ -433,6 +437,10 @@ function tryOut(state: GameState): SetState[] | null {
 // Política de coringa
 // ---------------------------------------------------------------------------------------------
 /** Jogada do bot: nova mesa inteira, ou null para comprar uma pedra. Mesma assinatura de botMove em shared/bot.ts. */
+/** Cada personagem tem seu jeito: uns arriscam mais o coringa, outros menos (varia só em torno da regra do nível). */
+const RISK_BIAS = [1.4, 1, 0.65, 1.2, 0.85];
+export const personaBias = (persona: LevelCfg): number => RISK_BIAS[(persona as { slot?: number }).slot ?? 1] ?? 1;
+
 export function grandmasterMove(state: GameState, persona: LevelCfg, rng: () => number): SetState[] | null {
   if (!persona.gm) return chooseMove(state, persona, rng);
   const saved = { ...P };
@@ -466,6 +474,7 @@ function chooseMove(state: GameState, persona: LevelCfg, _rng: () => number): Se
     me.rack.length <= P.relMe ||
     minOpp <= P.relOpp ||
     state.pool.length <= P.relPool ||
+    (P.riskMax > 0 && placedJokerRisk(state, full.table) <= P.riskMax * personaBias(persona)) ||
     (!me.melded && !hold && P.relOpen) ||
     full.nPlain - (hold ? hold.nPlain : 0) >= P.relGain;
   if (release) return full.table;
