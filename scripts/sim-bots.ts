@@ -54,5 +54,6 @@ run('Fácil x Médio', ['easy', 'normal']);
 run('Médio x Difícil', ['normal', 'hard']);
 run('Difícil x Mestre', ['hard', 'master']);
 run('Médio x Mestre', ['normal', 'master']);
+run('Mestre x Grão-mestre', ['master', 'grandmaster']);
 run('Mesa de 4', ['easy', 'normal', 'hard', 'master']);
 run('Controle: Mestre x Mestre', ['master', 'master']);
