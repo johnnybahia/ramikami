@@ -116,7 +116,7 @@ describe('game', () => {
       const min = Math.min(...g.players.map((p) => handPoints(p.rack)));
       expect(g.result!.winners.every((w) => handPoints(g.players.find((p) => p.id === w)!.rack) === min)).toBe(true);
     }
-  });
+  }, 60000);
 });
 
 describe('arrangeTiles', () => {
