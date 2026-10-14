@@ -8,7 +8,9 @@
 //  2. BATER: busca de cobertura exata (solveOut) de TODA a mesa em foco + TODO o cavalete, com os coringas como
 //     curingas livres (inclusive os que já estavam na mesa: o coringa da mesa é trocado por pedra do cavalete e
 //     reaproveitado no MESMO turno). Acha fechamentos que a busca por alívio do Mestre (foco de 7 conjuntos, objetivo
-//     em pontos) não enxerga, e por isso compra bem menos sem necessidade.
+//     em pontos) não enxerga, e por isso compra bem menos sem necessidade. Com 1–2 pedras no cavalete, se a busca
+//     padrão (conjuntos perto do cavalete) falha, tenta de novo com TODOS os conjuntos da mesa (deepRack/deepAll):
+//     +~2 pontos de vitória contra o Mestre, medido em 480 partidas.
 //
 // Só usa informação pública (mesa, cavalete próprio, tamanho do cavalete dos oponentes, tamanho do pote).
 // Jogada média ~25 ms; pior caso medido ~0,8 s; nenhuma jogada inválida em milhares de partidas.
@@ -68,9 +70,9 @@ const DEFAULTS: Params = {
   outBudget: 30000,
   outMs: 120,
   outFocus: 99,
-  deepRack: 0,
-  deepBudget: 300000,
-  deepMs: 2500,
+  deepRack: 2,
+  deepBudget: 100000,
+  deepMs: 500,
   deepAll: true,
 };
 
