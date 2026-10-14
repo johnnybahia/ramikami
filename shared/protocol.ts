@@ -102,7 +102,7 @@ export interface RoomView {
 }
 
 export type ClientMsg =
-  | { t: 'join'; id: string; name: string; photo?: string }
+  | { t: 'join'; id: string; name: string; photo?: string; nolog?: boolean }
   | { t: 'start' }
   | { t: 'seat'; id: string; seat: number }
   | { t: 'settings'; turnSeconds?: TurnSeconds; bestOf?: BestOf }

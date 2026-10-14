@@ -74,6 +74,19 @@ scripts/  sw.template.js (service worker), ícones, teste e2e do servidor
 1. Defina uma senha de administrador (uma vez): `npx wrangler secret put ADMIN_KEY -c server/wrangler.toml`
 2. Para zerar: `curl -X POST -H "X-Admin-Key: SUA_SENHA" https://SEU-SITE.workers.dev/api/ranking/reset`
 
+## Log de partidas (para melhorar os bots)
+
+As partidas em **sala online** (com pelo menos um humano) são registradas de forma **anônima**: só o lugar na mesa, "humano ou bot", o nível do bot, o cavalete de quem joga antes de cada jogada, a ação (jogar, comprar, passar, sair) e a mesa resultante. Não há nome, foto nem identificador de jogador. Partidas offline não saem do aparelho. Quem marcar *Visual → Não guardar minhas partidas online* não é registrado (e a partida inteira deixa de ser registrada se houver um só na mesa). Ficam as 2.000 partidas completas mais recentes (comprimidas, no Durable Object do ranking) e 50.000 resumos.
+
+Com a senha de administrador (`ADMIN_KEY`, veja acima):
+
+- Resumo por nível (humano contra Fácil/Médio/Difícil/Mestre/Grão-mestre): `curl -H "X-Admin-Key: SUA_SENHA" https://SEU-SITE.workers.dev/api/stats`
+- Baixar tudo: `BASE=https://SEU-SITE.workers.dev ADMIN_KEY=SUA_SENHA node scripts/games-export.mjs partidas.ndjson` (rodar de novo baixa só as novas)
+- Ler: `npx tsx scripts/games-report.ts partidas.ndjson` (resumo e comportamento), `--missed` (saídas que o jogador não achou), `--replay <id>` (conta uma partida lance a lance)
+- Apagar tudo: `curl -X POST -H "X-Admin-Key: SUA_SENHA" https://SEU-SITE.workers.dev/api/games/clear`
+
+Testes: unitários (`shared/gamelog.test.ts`, inclui refazer a partida só pelo log) e `npx wrangler dev -c server/wrangler.toml --var ADMIN_KEY:testkey` + `node scripts/e2e-gamelog.mjs`. `scripts/gamelog-synth.ts` gera um arquivo de teste para ensaiar o leitor.
+
 ## Sessão melhor de 3/5/7
 
 O anfitrião escolhe no saguão. Todas as partidas combinadas são jogadas; o placar da sessão (vitórias e pontos na mão) vive só enquanto a sala existir. Depois da última, o anfitrião pode pedir "Jogar mais uma": os jogadores confirmam em 30s e o placar continua. Teste de ponta a ponta: `npm run server:dev` e `npm run e2e:series`.

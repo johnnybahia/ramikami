@@ -126,6 +126,26 @@ export function applyA11yToPage(): void {
   document.documentElement.dataset.contrast = a.contrast ? 'high' : 'normal';
 }
 
+// ---------- privacidade: log anônimo das partidas online ----------
+const NOLOG_KEY = 'ramikami_nolog_v1';
+/** true = a pessoa pediu para não guardar as partidas online dela (o log é anônimo, mas a escolha é dela) */
+export function loadNoLog(): boolean {
+  try {
+    return localStorage.getItem(NOLOG_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function saveNoLog(off: boolean): void {
+  try {
+    if (off) localStorage.setItem(NOLOG_KEY, '1');
+    else localStorage.removeItem(NOLOG_KEY);
+  } catch {
+    /* vale só nesta sessão */
+  }
+}
+
 // ---------- progresso (liberar o Grão-mestre) ----------
 const PROGRESS_KEY = 'ramikami_progress_v1';
 export function loadProgress(): Progress {
