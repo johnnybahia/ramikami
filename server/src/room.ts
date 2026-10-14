@@ -730,10 +730,22 @@ export class GameRoom implements DurableObject {
     if (s.phase !== 'playing' || !s.game) return;
     if (currentPlayer(s.game).isBot) {
       const at = s.botAt ?? 0;
+      const deadline = s.turnEndsAt ?? 0;
       if (Date.now() < at - 100) {
         await this.ctx.storage.setAlarm(at);
         return;
       }
+      if (deadline > 0 && Date.now() >= deadline - 100) {
+        // vigia: o bot passou do prazo sem jogar (o cálculo falhou, a invocação foi interrompida ou o alarme atrasou):
+        // ele compra uma pedra no lugar e o jogo segue, em vez de a mesa ficar parada
+        const cur = currentPlayer(s.game);
+        await this.reportError('botTimeout', new Error('o bot não jogou no prazo'), this.botCtx(s.game));
+        const step = drawTurn(s.game, cur.id);
+        if (step.ok) await this.afterGameChange(step.state);
+        return;
+      }
+      // antes de calcular, arma o vigia no fim do prazo: se o cálculo travar ou matar esta invocação, o alarme do prazo destrava a mesa
+      if (deadline > Date.now()) await this.ctx.storage.setAlarm(deadline);
       return this.botTurn();
     }
     if (s.turnEndsAt === null) return; // sem limite de tempo: nada a fazer
@@ -900,12 +912,40 @@ export class GameRoom implements DurableObject {
     await this.ctx.storage.setAlarm(next);
   }
 
+  /** Anota um erro do servidor no ranking (melhor esforço) para dar para investigar travamentos em produção. */
+  private async reportError(where: string, e: unknown, extra: Record<string, unknown> = {}): Promise<void> {
+    console.error(where, e);
+    try {
+      await this.env.RANKING.get(this.env.RANKING.idFromName('global')).fetch('https://ranking/err', {
+        method: 'POST',
+        body: JSON.stringify({ w: where, msg: e instanceof Error ? `${e.message} | ${(e.stack ?? '').split('\n').slice(1, 4).join(' | ')}` : String(e), extra }),
+        signal: AbortSignal.timeout(3000),
+      });
+    } catch {
+      /* telemetria é opcional */
+    }
+  }
+
+  /** Dados da posição para o registro de erros (sem nomes nem ids). */
+  private botCtx(g: GameState): Record<string, unknown> {
+    const cur = currentPlayer(g);
+    return { nivel: this.s?.bots[cur.id], turno: g.turnNo, cavalete: cur.rack.length, conjuntos: g.table.length, pote: g.pool.length, jogadores: g.players.length };
+  }
+
   private async botTurn(): Promise<void> {
     const s = this.s!;
     const g = s.game!;
     const cur = currentPlayer(g);
     const persona = this.botCfg(cur.id);
-    const table = botMove(g, persona);
+    let table: SetState[] | null = null;
+    try {
+      if (this.env.DEBUG_BOT === 'throw') throw new Error('falha de teste do bot');
+      if (this.env.DEBUG_BOT === 'skip') return; // teste: o bot "não joga"; só o vigia do alarm resolve
+      table = botMove(g, persona);
+    } catch (e) {
+      // o cálculo do bot falhou: ele compra uma pedra e a mesa segue (em vez de travar)
+      await this.reportError('botMove', e, this.botCtx(g));
+    }
     let step = table ? playTurn(g, cur.id, table) : null;
     const played = !!step && step.ok;
     if (!step || !step.ok) step = drawTurn(g, cur.id);
