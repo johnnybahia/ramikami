@@ -4,9 +4,10 @@ import { findCompactSpot, relayout, type SetState } from './layout';
 import type { GameState } from './game';
 import { key, packCounts, type Cand } from './pack';
 import { solveTable } from './solver';
+import { grandmasterMove } from './grandmaster';
 
-export type BotLevel = 'easy' | 'normal' | 'hard' | 'master';
-export const BOT_LEVELS: readonly BotLevel[] = ['easy', 'normal', 'hard', 'master'];
+export type BotLevel = 'easy' | 'normal' | 'hard' | 'master' | 'grandmaster';
+export const BOT_LEVELS: readonly BotLevel[] = ['easy', 'normal', 'hard', 'master', 'grandmaster'];
 export const MAX_BOTS = 3;
 
 export interface LevelCfg {
@@ -29,6 +30,8 @@ export interface LevelCfg {
   holdJokers: boolean;
   /** fração do tempo do turno que levam "pensando" (min, max): nunca jogam de imediato */
   think: [number, number];
+  /** motor de jogo próprio (o Grão-mestre usa shared/grandmaster.ts); sem isso vale o motor guloso comum */
+  engine?: 'grandmaster';
   lines: { play: string[]; draw: string[] };
 }
 
@@ -85,6 +88,23 @@ export const LEVEL_CFG: Record<BotLevel, LevelCfg> = {
     think: [0.35, 0.55],
     lines: { play: ['Xeque.', 'O caminho é este.', 'Previsível.'], draw: ['Uma pausa estratégica.', 'Interessante...', 'Sem jogada ótima.'] },
   },
+  grandmaster: {
+    label: 'Grão-mestre',
+    blurb: 'Segura o coringa para a hora certa, procura sempre fechar a partida e raramente perde uma jogada.',
+    budget: 20000,
+    extend: true,
+    jokers: true,
+    skip: 0,
+    rearrange: 40000,
+    rearrangeChance: 1,
+    holdJokers: false,
+    think: [0.35, 0.55],
+    engine: 'grandmaster',
+    lines: {
+      play: ['O fim se aproxima.', 'Tudo previsto.', 'A paciência vence.', 'Já vi este jogo.'],
+      draw: ['Esperar também é jogar.', 'Cada pedra tem seu tempo.', 'Hmm. Interessante.'],
+    },
+  },
 };
 
 /** Quatro nomes por nível (dois homens, duas mulheres). O jogador não escolhe nomes: sorteamos entre eles. */
@@ -112,6 +132,13 @@ const NAMES: Record<BotLevel, { name: string; gender: 'm' | 'f' }[]> = {
     { name: 'Sensei Aiko', gender: 'f' },
     { name: 'Mestre Otávio', gender: 'm' },
     { name: 'Mestra Yara', gender: 'f' },
+  ],
+  grandmaster: [
+    { name: 'Yoda', gender: 'm' },
+    { name: 'Sun Tzu', gender: 'm' },
+    { name: 'Marie Curie', gender: 'f' },
+    { name: 'Einstein', gender: 'm' },
+    { name: 'Kame', gender: 'm' },
   ],
 };
 
@@ -197,6 +224,7 @@ function extend(table: SetState[], rest: number[], allowJokers: boolean): number
 
 /** Jogada do bot segundo a personalidade: nova mesa, ou null para comprar uma pedra. */
 export function botMove(state: GameState, persona: LevelCfg = LEVEL_CFG.master, rng: () => number = Math.random): SetState[] | null {
+  if (persona.engine === 'grandmaster') return grandmasterMove(state, persona, rng);
   const me = state.players[state.turn]!;
   if (me.melded && rng() < persona.skip) return null;
 

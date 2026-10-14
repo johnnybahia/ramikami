@@ -10,7 +10,7 @@ const SKINS = ['#f1c7a5', '#e3b78e', '#c98b66', '#8d5a3c'];
 const HAIR_M = ['#2a1b14', '#5a3a22', '#1b1b1b', '#9a9a9a'];
 const HAIR_F = ['#3b1f6b', '#2a1b14', '#a0522d', '#d9a441'];
 const BODY = ['#2f7de1', '#8b5a2b', '#e5395f', '#264653', '#1d1d1d', '#6a4c93'];
-const BG_HUE = [30, 150, 270, 5];
+const BG_HUE = [30, 150, 270, 5, 48];
 
 /** Cabelo e barba por estilo (0..3), para homens e mulheres. */
 function hair(gender: 'm' | 'f', style: number, c: string): string {
@@ -37,7 +37,8 @@ export function personaAvatar(p: Persona): string {
   const hairColor = (p.gender === 'm' ? HAIR_M : HAIR_F)[(li * 3 + p.slot) % 4]!;
   const style = (li + p.slot) % 4;
   const body = BODY[(li * 2 + p.slot) % BODY.length]!;
-  const bg = `hsl(${(BG_HUE[li]! + p.slot * 16) % 360} 58% 46%)`;
+  const grand = p.level === 'grandmaster';
+  const bg = grand ? `hsl(${44 + p.slot * 6} 80% 42%)` : `hsl(${(BG_HUE[li]! + p.slot * 16) % 360} 58% 46%)`;
   const withGlasses = (li + p.slot) % 2 === 0;
   const female = p.gender === 'f';
   const svg =
@@ -48,6 +49,7 @@ export function personaAvatar(p: Persona): string {
     hair(p.gender, style, hairColor) +
     brows(hairColor) +
     eyes() +
+    (grand ? '<path d="M30 24 L34 8 L42 18 L48 5 L54 18 L62 8 L66 24Z" fill="#ffd23a" stroke="#a87c00" stroke-width="1.5"/>' : '') +
     (withGlasses ? glasses('#3a2a1a') : '') +
     (female ? `<path d="M40 62 Q48 70 56 62 Q48 66 40 62Z" fill="#d6204a"/>` : smile(p.slot % 2 ? 7 : 10)) +
     `</svg>`;

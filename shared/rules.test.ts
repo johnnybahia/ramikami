@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { analyzeSet, arrangeTiles, validatePlay } from './rules';
 import { createGame, drawTurn, playTurn, removePlayer, currentPlayer, salvagePlay } from './game';
-import { botMove, pickBots, PERSONAS } from './bot';
+import { botMove, pickBots, PERSONAS, LEVEL_CFG, BOT_LEVELS } from './bot';
 import { solveTable } from './solver';
 import { mulberry32, handPoints } from './tiles';
 import { COLS, animCounts, findCompactSpot, packRows, relayout, type SetState } from './layout';
@@ -187,7 +187,7 @@ describe('salvagePlay (fim do tempo)', () => {
 
 describe('pickBots', () => {
   it('devolve exatamente a quantidade pedida, sem repetir nomes', () => {
-    for (const level of ['easy', 'normal', 'hard', 'master'] as const) {
+    for (const level of BOT_LEVELS) {
       for (const n of [0, 1, 2, 3, 4]) {
         const bots = pickBots(level, n, mulberry32(n + 7));
         expect(bots.length).toBe(n);
@@ -196,6 +196,57 @@ describe('pickBots', () => {
       }
     }
   });
+});
+
+describe('Grão-mestre', () => {
+  const mk = (rack: number[]) => {
+    const g = createGame([{ id: 'a', name: 'A', isBot: true }, { id: 'b', name: 'B' }], mulberry32(5));
+    g.turn = 0;
+    g.players[0]!.melded = true;
+    g.players[0]!.rack = rack;
+    g.table = [S(1, [T(0, 5), T(0, 6), T(0, 7)], 0, 0)];
+    return g;
+  };
+  it('tem os cinco nomes pedidos e sorteia sem repetir', () => {
+    const names = PERSONAS.filter((p) => p.level === 'grandmaster').map((p) => p.name);
+    expect(names).toEqual(['Yoda', 'Sun Tzu', 'Marie Curie', 'Einstein', 'Kame']);
+    expect(LEVEL_CFG.grandmaster.engine).toBe('grandmaster');
+  });
+  it('segura o coringa em vez de gastá-lo sem bater; o Mestre o gasta', () => {
+    const rack = [J1, T(1, 3), T(1, 4), T(2, 9), T(3, 12)];
+    const g = mk(rack);
+    expect(botMove(g, LEVEL_CFG.master, mulberry32(1))).not.toBeNull();
+    expect(botMove(g, LEVEL_CFG.grandmaster, mulberry32(1))).toBeNull();
+  });
+  it('usa o coringa quando isso esvazia o cavalete (bate)', () => {
+    const rack = [J1, T(1, 3), T(1, 4)];
+    const g = mk(rack);
+    const m = botMove(g, LEVEL_CFG.grandmaster, mulberry32(1))!;
+    expect(m).not.toBeNull();
+    const c = validatePlay(g.table, rack, true, m);
+    expect(c.ok && c.added.length === rack.length).toBe(true);
+  });
+  it('partidas contra o Mestre terminam e nunca devolvem jogada inválida', () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const rng = mulberry32(900 + seed);
+      let g = createGame([{ id: 'a', name: 'A', isBot: true }, { id: 'b', name: 'B', isBot: true }], rng);
+      let guard = 0;
+      while (g.phase === 'playing' && guard++ < 700) {
+        const cur = currentPlayer(g);
+        const persona = cur.id === 'a' ? LEVEL_CFG.grandmaster : LEVEL_CFG.master;
+        const m = botMove(g, persona, rng);
+        if (m) {
+          const step = playTurn(g, cur.id, m);
+          expect(step.ok).toBe(true);
+          g = step.ok ? step.state : g;
+        } else {
+          const step = drawTurn(g, cur.id);
+          g = step.ok ? step.state : g;
+        }
+      }
+      expect(g.phase).toBe('ended');
+    }
+  }, 60000);
 });
 
 describe('createGame: quem começa', () => {
