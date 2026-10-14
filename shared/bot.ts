@@ -26,8 +26,10 @@ export interface LevelCfg {
   rearrange: number;
   /** chance de tentar rearranjar a mesa em cada turno */
   rearrangeChance: number;
-  /** guarda coringas no cavalete até o fim da partida */
+  /** guarda coringas no cavalete enquanto ele tem mais de 6 pedras */
   holdJokers: boolean;
+  /** a guarda vale também na reorganização da mesa (sem isso o coringa ainda pode entrar num rearranjo) */
+  holdRearrange?: boolean;
   /** fração do tempo do turno que levam "pensando" (min, max): nunca jogam de imediato */
   think: [number, number];
   /** motor de jogo próprio (shared/grandmaster.ts: Mestre e Grão-mestre); sem isso vale o motor guloso comum */
@@ -66,20 +68,21 @@ export const LEVEL_CFG: Record<BotLevel, LevelCfg> = {
   },
   hard: {
     label: 'Difícil',
-    blurb: 'Reorganiza a mesa a cada jogada e aproveita bem as pedras.',
+    blurb: 'Reorganiza a mesa a cada jogada, aproveita bem as pedras e guarda o coringa enquanto tem muitas pedras.',
     budget: 15000,
     extend: true,
     jokers: true,
     skip: 0,
     rearrange: 10000,
     rearrangeChance: 1,
-    holdJokers: false,
+    holdJokers: true,
+    holdRearrange: true,
     think: [0.3, 0.5],
     lines: { play: ['Olha isso!', 'Tudo no lugar.', 'Ousadia!'], draw: ['Droga!', 'Próxima eu pego.', 'Paciência.'] },
   },
   master: {
     label: 'Mestre',
-    blurb: 'Busca máxima, reorganiza a mesa inteira, procura fechar a partida e não perde jogada.',
+    blurb: 'Busca máxima, reorganiza a mesa inteira, procura fechar a partida, guarda o coringa enquanto tem muitas pedras e não perde jogada.',
     budget: 20000,
     extend: true,
     jokers: true,
@@ -89,7 +92,7 @@ export const LEVEL_CFG: Record<BotLevel, LevelCfg> = {
     holdJokers: false,
     think: [0.35, 0.55],
     engine: 'grandmaster',
-    gm: { hold: false, deepRack: 0 },
+    gm: { hold: true, relMe: 6, deepRack: 0 }, // guarda o coringa até o cavalete ter 6 pedras ou menos
     lines: { play: ['Xeque.', 'O caminho é este.', 'Previsível.'], draw: ['Uma pausa estratégica.', 'Interessante...', 'Sem jogada ótima.'] },
   },
   grandmaster: {
@@ -238,7 +241,8 @@ export function botMove(state: GameState, persona: LevelCfg = LEVEL_CFG.master, 
     if (isJoker(id)) jokers++;
     else cnt[key(id)]!++;
   }
-  if (persona.holdJokers && me.rack.length > 6) jokers = 0;
+  const holding = persona.holdJokers && me.rack.length > 6;
+  if (holding) jokers = 0;
 
   const chosen = packCounts(cnt, jokers, !me.melded, persona.budget);
 
@@ -281,7 +285,7 @@ export function botMove(state: GameState, persona: LevelCfg = LEVEL_CFG.master, 
   };
   consider(simple);
   if (me.melded && persona.rearrange > 0 && rng() < persona.rearrangeChance) {
-    const r = solveTable(state.table, me.rack, persona.rearrange);
+    const r = solveTable(state.table, holding && persona.holdRearrange ? me.rack.filter((id) => !isJoker(id)) : me.rack, persona.rearrange);
     if (r) consider(relayout(r.table));
   }
   return bestMove;

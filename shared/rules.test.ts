@@ -251,14 +251,21 @@ describe('Grão-mestre', () => {
   }, 60000);
   it('o Mestre usa o motor de bater sem segurar o coringa, e o ajuste não vaza para o Grão-mestre', () => {
     expect(LEVEL_CFG.master.engine).toBe('grandmaster');
-    expect(LEVEL_CFG.master.gm).toEqual({ hold: false, deepRack: 0 });
+    expect(LEVEL_CFG.master.gm).toEqual({ hold: true, relMe: 6, deepRack: 0 });
     expect(LEVEL_CFG.hard.engine).toBeUndefined();
     expect(LEVEL_CFG.hard.rearrangeChance).toBe(1);
     const g = mk([J1, T(1, 3), T(1, 4), T(2, 9), T(3, 12)]);
-    expect(botMove(g, LEVEL_CFG.master, mulberry32(1))).not.toBeNull(); // gasta o coringa
+    expect(botMove(g, LEVEL_CFG.master, mulberry32(1))).not.toBeNull(); // com 6 pedras ou menos solta o coringa
     expect(GM_TUNING.hold).toBe(true);
     expect(GM_TUNING.deepRack).toBe(2);
     expect(botMove(g, LEVEL_CFG.grandmaster, mulberry32(1))).toBeNull(); // o Grão-mestre continua segurando
+  });
+  it('Mestre e Difícil guardam o coringa com mais de 6 pedras (sem jogada sem ele, compram) e o soltam com 6 ou menos', () => {
+    const many = [J1, T(1, 3), T(1, 4), T(2, 9), T(3, 12), T(2, 2), T(3, 5)]; // 7 pedras: a única jogada usa o coringa
+    for (const lv of [LEVEL_CFG.master, LEVEL_CFG.hard]) {
+      expect(botMove(mk(many), lv, mulberry32(1))).toBeNull();
+      expect(botMove(mk(many.slice(0, 6)), lv, mulberry32(1))).not.toBeNull();
+    }
   });
   it('partidas Difícil x Mestre terminam e nunca devolvem jogada inválida', () => {
     for (let seed = 1; seed <= 6; seed++) {
