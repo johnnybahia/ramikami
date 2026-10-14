@@ -646,7 +646,7 @@ export class GameScreen {
         ...(online ? [item('🔗', 'Convidar', () => void this.shareRoom())] : []),
         ...(online ? [item(me?.cam ? '📷' : '🚫', me?.cam ? 'Câmera ligada' : 'Ligar câmera', () => void this.toggleMedia('cam'))] : []),
         ...(online ? [item(me?.mic ? '🎤' : '🔇', me?.mic ? 'Microfone ligado' : 'Ligar microfone', () => void this.toggleMedia('mic'))] : []),
-        item('Aa', 'Visual e mesa', () => a11yPanel((a) => { this.scene.setContrast(a.contrast); this.scene.setSize(a.size); this.scene.setSkin(a.skin); this.scene.setBigTiles(a.bigTiles); this.scene.setRackAuto(a.rackAuto); })),
+        item('Aa', 'Visual e mesa', () => a11yPanel((a) => { this.scene.setContrast(a.contrast); this.scene.setPlastic(a.plastic); this.scene.setSize(a.size); this.scene.setSkin(a.skin); this.scene.setBigTiles(a.bigTiles); this.scene.setRackAuto(a.rackAuto); })),
         item(loadA11y().chat ? '💬' : '🔕', loadA11y().chat ? 'Falas dos bots: ligadas' : 'Falas dos bots: desligadas', () => {
           const on = !loadA11y().chat;
           saveA11y({ ...loadA11y(), chat: on });

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { COLS, ROWS, type SetState } from '../../shared/layout';
 import { TILE_COUNT } from '../../shared/tiles';
-import { setHighContrast } from './tiles3d';
+import { onPlasticLoaded, setHighContrast, setPlasticTiles } from './tiles3d';
 import { acceptingSets, newSetSpot, resolveBoardDrop, tableWithoutTile } from './draft';
 import { CELL_D, CELL_W, ROW_D, TILE_D, TILE_H, TILE_W, Tile, woodTexture } from './tiles3d';
 import { onSkinChange, skinById, skinTexture, type SkinId } from './skins';
@@ -83,6 +83,7 @@ export class TableScene {
   private remoteIds = new Set<number>();
   private felt!: THREE.Mesh;
   private offSkin: () => void = () => {};
+  private offPlastic: () => void = () => {};
   /** conjuntos onde a pedra arrastada encaixa (brilham em verde) */
   private hintSets = new Set<number>();
   private hintFor = -1;
@@ -164,6 +165,10 @@ export class TableScene {
     const felt = new THREE.Mesh(new THREE.PlaneGeometry(feltW, feltD), new THREE.MeshStandardMaterial({ map: skinTexture('verde', 4), roughness: 1, metalness: 0 }));
     this.felt = felt;
     this.offSkin = onSkinChange(() => (this.dirty = true));
+    this.offPlastic = onPlasticLoaded(() => {
+      for (const t of this.tiles) t.refreshFace(this.aniso); // os riscos chegaram: refaz as faces com eles
+      this.dirty = true;
+    });
     felt.rotation.x = -Math.PI / 2;
     felt.receiveShadow = true;
     s.add(felt);
@@ -616,6 +621,13 @@ export class TableScene {
     mat.map = skinTexture(id, this.aniso);
     mat.needsUpdate = true;
     this.boardScene.background = new THREE.Color(skin.bg);
+    this.dirty = true;
+  }
+
+  /** Plástico arranhado nas pedras (opção em Visual). */
+  setPlastic(on: boolean): void {
+    setPlasticTiles(on);
+    for (const t of this.tiles) t.applyPlastic(this.aniso);
     this.dirty = true;
   }
 
@@ -1174,6 +1186,7 @@ export class TableScene {
     this.disposed = true;
     cancelAnimationFrame(this.rafId);
     this.offSkin();
+    this.offPlastic();
     this.ro.disconnect();
     document.removeEventListener('visibilitychange', this.onVis);
     window.removeEventListener('pointerup', this.onUp);
