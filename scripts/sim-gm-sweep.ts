@@ -1,7 +1,7 @@
-// Varredura de parâmetros do Grão-mestre: variante x Grão-mestre de fábrica.
+// Varredura de parâmetros do Grão-mestre: variante x Grão-mestre de fábrica (ou x Mestre com OPP=master).
 // npx tsx scripts/sim-gm-sweep.ts '<json de parâmetros da variante>' [partidas=400] [jogadores=2]   (SEED=<n>)
 import { createGame, playTurn, drawTurn, currentPlayer, type GameState } from '../shared/game';
-import { LEVEL_CFG } from '../shared/bot';
+import { LEVEL_CFG, botMove as masterMove } from '../shared/bot';
 import { grandmasterMove, GM_TUNING, GM_DEFAULTS } from '../shared/grandmaster';
 import { isJoker, mulberry32 } from '../shared/tiles';
 
@@ -10,6 +10,8 @@ const N = Number(process.argv[3] ?? 400);
 const PLAYERS = Number(process.argv[4] ?? 2);
 const SEED0 = Number(process.env.SEED ?? 9000);
 const CFG = LEVEL_CFG.grandmaster;
+const VS_MASTER = process.env.OPP === 'master';
+const mv: number[] = [];
 const use = (v: Record<string, number | boolean>) => { Object.assign(GM_TUNING, GM_DEFAULTS, v); };
 
 let jokersLeftOnTable = 0;
@@ -19,8 +21,11 @@ function play(seat: number, seed: number) {
   let guard = 0;
   while (g.phase === 'playing' && guard++ < 700) {
     const cur = currentPlayer(g);
-    use(Number(cur.id.slice(1)) === seat ? variant : {});
-    const t = grandmasterMove(g, CFG, rng);
+    const mine = Number(cur.id.slice(1)) === seat;
+    use(mine ? variant : {});
+    const tm = performance.now();
+    const t = !mine && VS_MASTER ? masterMove(g, LEVEL_CFG.master, rng) : grandmasterMove(g, CFG, rng);
+    if (mine) mv.push(performance.now() - tm);
     let step = t ? playTurn(g, cur.id, t) : null;
     if (!step || !step.ok) step = drawTurn(g, cur.id);
     if (!step.ok) break;
@@ -48,5 +53,6 @@ const c = (p + (z * z) / (2 * n)) / (1 + (z * z) / n), h = (z * Math.sqrt((p * (
 console.log(JSON.stringify({
   variante: variant, jogadores: PLAYERS, partidas: games, vitorias: +(p * 100).toFixed(1), ic95: [+((c - h) * 100).toFixed(1), +((c + h) * 100).toFixed(1)],
   pontosVariante: +(ptsV / n).toFixed(1), pontosBase: +(ptsB / n).toFixed(1), turnos: +(turns / n).toFixed(0), coringasNaMesaAoFim: +(jokTab / n).toFixed(2),
+  msMedioPorJogada: +(mv.reduce((a, b) => a + b, 0) / Math.max(mv.length, 1)).toFixed(1), msP99: Math.round(mv.slice().sort((a, b) => a - b)[Math.floor(mv.length * 0.99)] ?? 0), msMax: Math.round(Math.max(0, ...mv)),
   segundos: Math.round((performance.now() - t0) / 1000),
 }));

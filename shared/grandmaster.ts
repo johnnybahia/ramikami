@@ -47,6 +47,12 @@ interface Params {
   outMs: number;
   /** quantos conjuntos da mesa (os mais próximos das pedras do cavalete, e os com coringa) entram na busca de bater */
   outFocus: number;
+  /** segunda tentativa de bater, mais funda, quando a padrão não achou e o cavalete tem <= deepRack pedras (0 = desligada) */
+  deepRack: number;
+  deepBudget: number;
+  deepMs: number;
+  /** na tentativa funda, TODOS os conjuntos da mesa entram na busca (não só os perto das pedras do cavalete) */
+  deepAll: boolean;
 }
 
 const DEFAULTS: Params = {
@@ -62,6 +68,10 @@ const DEFAULTS: Params = {
   outBudget: 30000,
   outMs: 120,
   outFocus: 99,
+  deepRack: 0,
+  deepBudget: 300000,
+  deepMs: 2500,
+  deepAll: true,
 };
 
 const P: Params = { ...DEFAULTS };
@@ -124,7 +134,8 @@ function candidatesFor(k: number, avail: Int8Array, jokersLeft: number): Step[] 
 }
 
 /** Conjuntos da mesa "perto" das pedras do cavalete (e todos os que têm coringa); o resto fica como está. */
-function focusSets(table: readonly SetState[], rack: readonly number[], maxFocus: number): { focus: SetState[]; fixed: SetState[] } {
+function focusSets(table: readonly SetState[], rack: readonly number[], maxFocus: number, all = false): { focus: SetState[]; fixed: SetState[] } {
+  if (all) return { focus: table.slice(), fixed: [] };
   const rackKeys = rack.filter((t) => !isJoker(t)).map(key);
   const scored = table.map((s) => {
     let score = 0;
@@ -152,8 +163,16 @@ function focusSets(table: readonly SetState[], rack: readonly number[], maxFocus
  * comum da mesa em foco e do cavalete cai em exatamente um conjunto válido; coringas preenchem buracos e os que
  * sobram são encaixados numa ponta de algum conjunto.
  */
-function solveOut(fullTable: readonly SetState[], rack: readonly number[], budget: number, maxMs: number, maxFocus: number): SetState[] | null {
-  const { focus, fixed } = focusSets(fullTable, rack, maxFocus);
+export function solveOut(
+  fullTable: readonly SetState[],
+  rack: readonly number[],
+  budget: number,
+  maxMs: number,
+  maxFocus: number,
+  all = false,
+  stats?: { nodes: number; aborted: boolean },
+): SetState[] | null {
+  const { focus, fixed } = focusSets(fullTable, rack, maxFocus, all);
   const t0 = performance.now();
   const avail = new Int8Array(52);
   const need = new Int8Array(52);
@@ -252,6 +271,10 @@ function solveOut(fullTable: readonly SetState[], rack: readonly number[], budge
     return false;
   };
   dfs();
+  if (stats) {
+    stats.nodes = nodes;
+    stats.aborted = aborted;
+  }
   return result;
 }
 
@@ -393,11 +416,15 @@ function genMove(state: GameState, persona: LevelCfg, nAllowed: number): Move | 
 /** Busca exata de bater: devolve a mesa final se der para esvaziar o cavalete agora. */
 function tryOut(state: GameState): SetState[] | null {
   const me = state.players[state.turn]!;
-  const t = solveOut(state.table, me.rack, P.outBudget, P.outMs, P.outFocus);
-  if (!t) return null;
-  const table = relayout(t);
-  const c = validatePlay(state.table, me.rack, me.melded, table);
-  return c.ok && c.added.length === me.rack.length ? table : null;
+  const check = (t: SetState[] | null): SetState[] | null => {
+    if (!t) return null;
+    const table = relayout(t);
+    const c = validatePlay(state.table, me.rack, me.melded, table);
+    return c.ok && c.added.length === me.rack.length ? table : null;
+  };
+  const std = check(solveOut(state.table, me.rack, P.outBudget, P.outMs, P.outFocus));
+  if (std || P.deepRack <= 0 || me.rack.length > P.deepRack) return std;
+  return check(solveOut(state.table, me.rack, P.deepBudget, P.deepMs, P.outFocus, P.deepAll));
 }
 
 // ---------------------------------------------------------------------------------------------
