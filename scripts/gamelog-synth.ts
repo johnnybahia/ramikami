@@ -29,7 +29,7 @@ for (let i = 0; i < N; i++) {
     g = step.state;
     turns.push(...logTurn(prev, g, { ms: 4000 + Math.floor(rng() * 9000) }));
   }
-  const log: GameLog = { ...head, end: head.t + 900_000, turns, result: logResult(g) };
+  const log: GameLog = { ...head, dur: 900, turns, result: logResult(g) };
   lines.push(JSON.stringify({ n: i + 1, summary: summarize(log), log }));
 }
 writeFileSync(out, lines.join('\n') + '\n');

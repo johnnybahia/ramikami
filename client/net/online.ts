@@ -37,7 +37,7 @@ export class OnlineBackend implements Backend {
     ws.onopen = () => {
       this.retry = 0;
       this.events.onConn('open');
-      this.send({ t: 'join', id: this.profile.id, name: this.profile.name, photo: this.profile.photo ?? undefined, nolog: loadNoLog() || undefined });
+      this.send({ t: 'join', id: this.profile.id, name: this.profile.name, photo: this.profile.photo ?? undefined, nolog: loadNoLog() });
       window.clearInterval(this.pingTimer);
       this.pingTimer = window.setInterval(() => this.send({ t: 'ping' }), 20000);
     };

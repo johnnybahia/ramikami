@@ -55,8 +55,12 @@ interface Stored {
   titles?: Record<string, true>;
   /** quem pediu para não guardar as próprias partidas no log anônimo (basta um na mesa para a partida não ser registrada) */
   nolog?: Record<string, true>;
+  /** log da partida em andamento (vai junto com o estado, no mesmo `persist`: sem escritas extras no armazenamento) */
+  glog?: { head: GameLogHead; turns: LogTurn[]; /** começo da vez atual */ ts: number; /** começo da partida */ t0: number } | null;
 }
 
+/** Teto de linhas por partida no log (mantém o estado salvo pequeno mesmo numa partida interminável). */
+const GLOG_MAX_TURNS = 800;
 const IDLE_ROOM_MS = 10 * 60 * 1000;
 /** No saguão, quem perde a conexão (ex.: saiu para mandar o convite) tem este tempo para voltar. */
 const LOBBY_GRACE_MS = 5 * 60 * 1000;
@@ -88,11 +92,6 @@ export class GameRoom implements DurableObject {
   /** última jogada completa e válida do rascunho (o que fica na mesa se o tempo acabar) */
   private checkpoint: SetState[] | null = null;
   private loaded: Promise<void>;
-  /** cabeçalho do log da partida em andamento (undefined = ainda não lido do armazenamento; null = esta partida não é registrada) */
-  private lgHead: GameLogHead | null | undefined;
-  private lgSeq = 0;
-  /** quando começou a vez atual (só em memória; serve para anotar quanto tempo cada jogada levou) */
-  private turnStartedAt = 0;
 
   constructor(
     private ctx: DurableObjectState,
@@ -243,7 +242,6 @@ export class GameRoom implements DurableObject {
   private async destroy(): Promise<void> {
     const code = this.s?.code;
     this.s = null;
-    this.lgHead = undefined;
     this.photos = {};
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
@@ -398,20 +396,7 @@ export class GameRoom implements DurableObject {
         return;
       }
       case 'submit': {
-        if (s.phase === 'ended') {
-      const aw = s.series?.awaiting;
-      if (aw && Date.now() >= aw.until - 100) {
-        // quem não respondeu no prazo conta como "não"
-        aw.ids = aw.ids.filter((id) => aw.confirmed.includes(id));
-        await this.continueSeries(true);
-      } else if (aw) {
-        await this.ctx.storage.setAlarm(aw.until);
-      } else {
-        await this.destroy();
-      }
-      return;
-    }
-    if (s.phase !== 'playing' || !s.game) return;
+        if (s.phase !== 'playing' || !s.game) return;
         const table = sanitizeTable(msg.table);
         if (!table) return this.err(ws, 'Mesa inválida.');
         const step = playTurn(s.game, me, table);
@@ -513,9 +498,10 @@ export class GameRoom implements DurableObject {
     }
 
     await this.refreshTitle(id);
+    // a recusa é "pegajosa": só um aviso explícito (nolog: false) a desfaz; um aparelho antigo que reconecta sem o campo não a apaga
     s.nolog ??= {};
     if (msg.nolog === true) s.nolog[id] = true;
-    else delete s.nolog[id];
+    else if (msg.nolog === false) delete s.nolog[id];
     delete s.away[id];
     const old = this.online().get(id);
     ws.serializeAttachment({ id });
@@ -636,14 +622,26 @@ export class GameRoom implements DurableObject {
     s.game = g;
     this.draftTable = null;
     this.checkpoint = null;
-    await this.glogTurn(prev, g, timeout);
-    this.turnStartedAt = Date.now();
+    this.glogTurn(prev, g, timeout);
+    // o envio do log começa já, em paralelo com o resto, e só é esperado no fim (mesmo que algo no meio falhe, p. ex. a sala ser
+    // destruída porque o último jogador saiu): o fim da partida e o ranking de pontos não esperam o log
+    let sending: Promise<void> | null = null;
+    try {
+      await this.afterGameChangeBody(g, bonusMs, (log) => (sending = this.glogSend(log)));
+    } finally {
+      if (sending) await sending;
+    }
+  }
+
+  private async afterGameChangeBody(g: GameState, bonusMs: number, sendLog: (log: GameLog) => void): Promise<void> {
+    const s = this.s!;
     if (g.phase === 'ended') {
       s.phase = 'ended';
       s.turnEndsAt = null;
       if (s.series) s.series.awaiting = null;
       await this.ctx.storage.setAlarm(Date.now() + ENDED_IDLE_MS);
-      await this.glogFinish(g);
+      const finished = this.glogFinish(g);
+      if (finished) sendLog(finished);
       await this.record(g);
       await this.listing();
     } else {
@@ -715,6 +713,20 @@ export class GameRoom implements DurableObject {
       await this.scheduleLobbyAlarm();
       return;
     }
+    if (s.phase === 'ended') {
+      // placar na tela depois do fim: espera a confirmação de "jogar mais uma"; sem ela (ou sem sessão), a sala some
+      const aw = s.series?.awaiting;
+      if (aw && Date.now() >= aw.until - 100) {
+        // quem não respondeu no prazo conta como "não"
+        aw.ids = aw.ids.filter((id) => aw.confirmed.includes(id));
+        await this.continueSeries(true);
+      } else if (aw) {
+        await this.ctx.storage.setAlarm(aw.until);
+      } else {
+        await this.destroy();
+      }
+      return;
+    }
     if (s.phase !== 'playing' || !s.game) return;
     if (currentPlayer(s.game).isBot) {
       const at = s.botAt ?? 0;
@@ -751,70 +763,72 @@ export class GameRoom implements DurableObject {
     s.game = createGame(order.map((p) => ({ id: p.id, name: p.name, isBot: !!s.bots[p.id] })), Math.random, first);
     s.phase = 'playing';
     s.recorded = false;
-    await this.glogStart(s.game);
+    this.glogStart(s.game);
     await this.afterGameChange(s.game);
   }
 
   // ---------- log de partidas (anônimo; nunca pode atrapalhar o jogo) ----------
-  private async glogHeadLoad(): Promise<GameLogHead | null> {
-    if (this.lgHead === undefined) this.lgHead = (await this.ctx.storage.get<GameLogHead>('lg:head')) ?? null;
-    return this.lgHead;
-  }
-
-  private async glogClear(): Promise<void> {
-    const keys = [...(await this.ctx.storage.list({ prefix: 'lg:' })).keys()];
-    for (let i = 0; i < keys.length; i += 128) await this.ctx.storage.delete(keys.slice(i, i + 128));
-  }
-
+  // O log em andamento vive em `s.glog` e vai junto com o estado, no `persist` que já existe a cada jogada (sem escritas extras).
   private optedOut(g: GameState): boolean {
     return g.players.some((p) => !p.isBot && this.s?.nolog?.[p.id]);
   }
 
-  private async glogStart(g: GameState): Promise<void> {
-    this.lgHead = null;
+  private glogStart(g: GameState): void {
+    const s = this.s!;
+    s.glog = null;
     try {
-      const s = this.s!;
-      await this.glogClear();
       if (!g.players.some((p) => !p.isBot) || this.optedOut(g)) return;
       const players: LogPlayer[] = g.players.map((p, seat) => (p.isBot ? { seat, kind: 'b', level: s.bots[p.id], persona: p.id } : { seat, kind: 'h' }));
       const id = Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, '0')).join('');
-      this.lgHead = logHead(g, players, { id, t: Date.now(), turnSeconds: s.turnSeconds });
-      await this.ctx.storage.put('lg:head', this.lgHead);
+      const now = Date.now();
+      // hora de início só até a hora cheia: o registro não pode ser cruzado, ao milissegundo, com o ranking público
+      s.glog = { head: logHead(g, players, { id, t: Math.floor(now / 3_600_000) * 3_600_000, turnSeconds: s.turnSeconds }), turns: [], ts: now, t0: now };
     } catch (e) {
-      this.lgHead = null;
+      s.glog = null;
       console.error('glog start', e);
     }
   }
 
-  private async glogTurn(prev: GameState | null, g: GameState, timeout: boolean): Promise<void> {
+  private glogTurn(prev: GameState | null, g: GameState, timeout: boolean): void {
+    const s = this.s!;
     try {
-      const head = await this.glogHeadLoad();
-      if (!head || !prev || prev === g) return;
+      const lg = s.glog;
+      if (!lg || !prev || prev === g) return;
       if (this.optedOut(g)) {
-        // alguém pediu para não guardar no meio da partida: apaga o que já havia
-        this.lgHead = null;
-        await this.glogClear();
+        s.glog = null; // alguém pediu para não guardar no meio da partida: descarta o que já havia
         return;
       }
-      const entries = logTurn(prev, g, { ms: this.turnStartedAt ? Date.now() - this.turnStartedAt : undefined, timeout });
-      for (const e of entries) await this.ctx.storage.put(`lg:t:${String(Date.now()).padStart(14, '0')}:${String(this.lgSeq++ % 10000).padStart(4, '0')}`, e);
+      const now = Date.now();
+      if (lg.turns.length < GLOG_MAX_TURNS) lg.turns.push(...logTurn(prev, g, { ms: lg.ts ? now - lg.ts : undefined, timeout }));
+      lg.ts = now;
     } catch (e) {
       console.error('glog turn', e);
     }
   }
 
-  private async glogFinish(g: GameState): Promise<void> {
+  /** Fim da partida: tira o log do estado e devolve o registro pronto para enviar (ou null se não é para guardar). */
+  private glogFinish(g: GameState): GameLog | null {
+    const s = this.s!;
     try {
-      const head = await this.glogHeadLoad();
-      if (!head) return;
-      this.lgHead = null;
-      const turns = [...(await this.ctx.storage.list<LogTurn>({ prefix: 'lg:t:' })).values()];
-      await this.glogClear();
-      if (this.optedOut(g)) return;
-      const log: GameLog = { ...head, end: Date.now(), turns, result: logResult(g) };
-      await this.env.RANKING.get(this.env.RANKING.idFromName('global')).fetch('https://ranking/gamelog', { method: 'POST', body: JSON.stringify(log) });
+      const lg = s.glog;
+      s.glog = null;
+      if (!lg || this.optedOut(g)) return null;
+      return { ...lg.head, dur: Math.round((Date.now() - lg.t0) / 1000), turns: lg.turns, result: logResult(g) };
     } catch (e) {
       console.error('glog finish', e);
+      return null;
+    }
+  }
+
+  /** Manda o registro ao ranking (duas tentativas, 5 s cada); falhar só perde o registro, nunca atrapalha o jogo. */
+  private async glogSend(log: GameLog): Promise<void> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const r = await this.env.RANKING.get(this.env.RANKING.idFromName('global')).fetch('https://ranking/gamelog', { method: 'POST', body: JSON.stringify(log), signal: AbortSignal.timeout(5000) });
+        if (r.ok) return;
+      } catch (e) {
+        console.error('glog send', e);
+      }
     }
   }
 
