@@ -1,4 +1,5 @@
 import { BOT_LEVELS, type BotLevel } from '../shared/bot';
+import type { Progress } from '../shared/progress';
 import { SKIN_IDS, type SkinId } from './game/skins';
 import { MAX_PHOTO_CHARS, NAME_MAX } from '../shared/protocol';
 
@@ -123,4 +124,23 @@ export function applyA11yToPage(): void {
   const a = loadA11y();
   document.documentElement.style.fontSize = `${SIZE_PCT[a.size]}%`;
   document.documentElement.dataset.contrast = a.contrast ? 'high' : 'normal';
+}
+
+// ---------- progresso (liberar o Grão-mestre) ----------
+const PROGRESS_KEY = 'ramikami_progress_v1';
+export function loadProgress(): Progress {
+  try {
+    const p = JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? '{}') as Partial<Progress>;
+    const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+    return { masterWins: n(p.masterWins), gmWins: n(p.gmWins) };
+  } catch {
+    return { masterWins: 0, gmWins: 0 };
+  }
+}
+export function saveProgress(p: Progress): void {
+  try {
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(p));
+  } catch {
+    /* sem armazenamento: vale só nesta sessão */
+  }
 }

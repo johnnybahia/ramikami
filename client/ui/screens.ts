@@ -1,7 +1,8 @@
 import { claimName, createRoom, getMasterKey, getRanking, listRooms, resetRanking, setMasterKey } from '../api';
 import { getPwa, installApp, applyUpdate, isIos, onPwa } from '../pwa';
-import { avatarColor, loadA11y, saveA11y, type A11y, loadOfflineSettings, newId, photoFromFile, saveOfflineSettings, saveProfile, type OfflineSettings, type Profile } from '../store';
+import { avatarColor, loadA11y, saveA11y, type A11y, loadOfflineSettings, loadProgress, newId, photoFromFile, saveOfflineSettings, saveProfile, type OfflineSettings, type Profile } from '../store';
 import { BOT_LEVELS, LEVEL_CFG } from '../../shared/bot';
+import { GM_HOW_TO, gmStatusText, isGmUnlocked } from '../../shared/progress';
 import { LOGO_SKINS, SKINS, clearUserLogo, getUserLogo, setUserLogo } from '../game/skins';
 import { NAME_MAX, TURN_SECONDS_OPTIONS, turnLabel, type TurnSeconds } from '../../shared/protocol';
 import { avatarEl, btn, clear, h, toast } from './dom';
@@ -13,11 +14,11 @@ export interface MenuActions {
   startOnline(code: string): void;
 }
 
-function segmented<T extends string | number>(options: readonly { value: T; label: string }[], value: T, onChange: (v: T) => void): HTMLElement {
+function segmented<T extends string | number>(options: readonly { value: T; label: string; disabled?: boolean }[], value: T, onChange: (v: T) => void): HTMLElement {
   const wrap = h('div', { class: 'seg' });
   const render = (cur: T): void => {
     clear(wrap);
-    for (const o of options) wrap.append(h('button', { class: `seg-btn${o.value === cur ? ' active' : ''}`, text: o.label, attrs: { type: 'button' }, on: { click: () => { onChange(o.value); render(o.value); } } }));
+    for (const o of options) wrap.append(h('button', { class: `seg-btn${o.value === cur ? ' active' : ''}`, text: o.label, attrs: { type: 'button', ...(o.disabled ? { disabled: '' } : {}) }, on: { click: () => { if (o.disabled) return; onChange(o.value); render(o.value); } } }));
   };
   render(value);
   return wrap;
@@ -166,6 +167,9 @@ export function showMenu(root: HTMLElement, a: MenuActions): () => void {
 
 function offlinePanel(a: MenuActions): void {
   const cfg = loadOfflineSettings();
+  const prog = loadProgress();
+  const gmOpen = isGmUnlocked(prog);
+  if (!gmOpen && cfg.level === 'grandmaster') cfg.level = 'master';
   const m = modal(
     h(
       'div',
@@ -175,7 +179,8 @@ function offlinePanel(a: MenuActions): void {
       h('label', { class: 'lbl', text: 'Adversários (bots)' }),
       segmented([{ value: 1, label: '1' }, { value: 2, label: '2' }, { value: 3, label: '3' }] as const, cfg.bots, (v) => (cfg.bots = v)),
       h('label', { class: 'lbl', text: 'Nível dos bots' }),
-      segmented(BOT_LEVELS.map((l) => ({ value: l, label: LEVEL_CFG[l].label })), cfg.level, (v) => (cfg.level = v)),
+      segmented(BOT_LEVELS.map((l) => ({ value: l, label: l === 'grandmaster' && !gmOpen ? `🔒 ${LEVEL_CFG[l].label}` : LEVEL_CFG[l].label, disabled: l === 'grandmaster' && !gmOpen })), cfg.level, (v) => (cfg.level = v)),
+      h('p', { class: 'hint gm-hint', text: gmStatusText(prog) }),
       h('label', { class: 'lbl', text: 'Tempo por jogada (bots sempre 30s)' }),
       segmented([{ value: 60, label: '60s' }, { value: 120, label: '120s' }, { value: 0, label: 'Sem limite' }] as const, cfg.turnSeconds, (v) => (cfg.turnSeconds = v)),
       h('div', { class: 'row' }, btn('Começar', () => { saveOfflineSettings(cfg); m.close(); a.startOffline(cfg); }, 'primary'), btn('Cancelar', () => m.close(), 'ghost')),
@@ -301,8 +306,10 @@ function rulesPanel(): void {
         li('Pedras da mesa nunca voltam ao cavalete. Se não puder (ou não quiser) jogar, compre 1 pedra do pote.'),
         li('Acabou o tempo? A mesa volta ao início da sua vez e você compra 1 pedra. Três estouros seguidos tiram você da partida.'),
         li('Fim: quem esvaziar o cavalete bate; se o pote acabar e ninguém jogar, termina também. Vence quem tem MENOS pontos na mão (coringa = 30).'),
-        li('Arrastar: pedra a pedra (✋), conjunto inteiro (▭) ou dividir (✂). Duas mãos / roda do mouse fazem zoom; arraste a mesa vazia para mover a câmera.'),
+        li('Mover (✋): arraste a própria pedra da mesa ou do cavalete. Selecionar (☑): marque pedras do cavalete para jogar juntas, ou um trecho de um conjunto da mesa (segure para marcar o conjunto todo) e arraste. Duas mãos / roda do mouse fazem zoom; arraste a mesa vazia para mover a câmera.'),
       ),
+      h('h4', { class: 'rules-sub', text: 'Níveis dos bots e o Grão-mestre' }),
+      h('ul', null, ...GM_HOW_TO.map((t) => li(t)), li(gmStatusText(loadProgress()))),
       btn('Entendi', () => m.close(), 'primary'),
     ),
   );

@@ -358,3 +358,6 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .time-alarm.on.fast { animation-duration: 0.5s; }
 @keyframes alarm { 0% { opacity: 1; } 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .time-alarm.on { animation: none; opacity: 0.9; } }
+
+.gm-hint { color: var(--gold); font-weight: 600; }
+.rules-sub { margin: 14px 0 4px; color: var(--gold); font-size: 1rem; }
