@@ -3,7 +3,7 @@ import { noopEvents } from '../backend';
 import { wsUrl } from '../api';
 import type { SetState } from '../../shared/layout';
 import type { BestOf, BotLevel, ClientMsg, ServerMsg, TurnSeconds } from '../../shared/protocol';
-import type { Profile } from '../store';
+import { loadNoLog, type Profile } from '../store';
 
 export class OnlineBackend implements Backend {
   readonly mode = 'online' as const;
@@ -37,7 +37,7 @@ export class OnlineBackend implements Backend {
     ws.onopen = () => {
       this.retry = 0;
       this.events.onConn('open');
-      this.send({ t: 'join', id: this.profile.id, name: this.profile.name, photo: this.profile.photo ?? undefined });
+      this.send({ t: 'join', id: this.profile.id, name: this.profile.name, photo: this.profile.photo ?? undefined, nolog: loadNoLog() || undefined });
       window.clearInterval(this.pingTimer);
       this.pingTimer = window.setInterval(() => this.send({ t: 'ping' }), 20000);
     };

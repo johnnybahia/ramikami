@@ -1,6 +1,6 @@
 import { claimName, createRoom, getMasterKey, getRanking, listRooms, resetRanking, setMasterKey } from '../api';
 import { getPwa, installApp, applyUpdate, isIos, onPwa } from '../pwa';
-import { avatarColor, loadA11y, saveA11y, type A11y, loadOfflineSettings, loadProgress, loadTitle, newId, photoFromFile, saveOfflineSettings, saveProfile, type OfflineSettings, type Profile } from '../store';
+import { avatarColor, loadA11y, saveA11y, type A11y, loadNoLog, loadOfflineSettings, loadProgress, loadTitle, newId, saveNoLog, photoFromFile, saveOfflineSettings, saveProfile, type OfflineSettings, type Profile } from '../store';
 import { BOT_LEVELS, LEVEL_CFG } from '../../shared/bot';
 import { GM_HOW_TO, GM_TITLE_WINS, gmStatusText, isGmUnlocked } from '../../shared/progress';
 import { LOGO_SKINS, SKINS, clearUserLogo, getUserLogo, setUserLogo } from '../game/skins';
@@ -308,6 +308,8 @@ function rulesPanel(): void {
         li('Fim: quem esvaziar o cavalete bate; se o pote acabar e ninguém jogar, termina também. Vence quem tem MENOS pontos na mão (coringa = 30).'),
         li('Mover (✋): arraste a própria pedra da mesa ou do cavalete. Selecionar (☑): marque pedras do cavalete para jogar juntas, ou um trecho de um conjunto da mesa (segure para marcar o conjunto todo) e arraste. Duas mãos / roda do mouse fazem zoom; arraste a mesa vazia para mover a câmera.'),
       ),
+      h('h4', { class: 'rules-sub', text: 'Privacidade' }),
+      h('ul', null, li('As partidas em sala online são guardadas de forma anônima (só as jogadas: sem nome, foto ou identificador) para melhorar os bots. Partidas offline não saem do seu aparelho. Para não participar: Visual → "Não guardar minhas partidas online".')),
       h('h4', { class: 'rules-sub', text: 'Níveis dos bots e o Grão-mestre' }),
       h('ul', null, ...GM_HOW_TO.map((t) => li(t)), li(gmStatusText(loadProgress())), li(loadTitle().title ? '👑 Você é Grão-mestre.' : `Seu título: ${loadTitle().wins}/${GM_TITLE_WINS} vitórias online contra Grão-mestres.`)),
       btn('Entendi', () => m.close(), 'primary'),
@@ -324,6 +326,9 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
     saveA11y({ ...loadA11y(), contrast: cb.checked });
     onChange?.(loadA11y());
   });
+  const nologCb = h('input', { attrs: { type: 'checkbox' } });
+  nologCb.checked = loadNoLog();
+  nologCb.addEventListener('change', () => saveNoLog(nologCb.checked));
   const bigCb = h('input', { attrs: { type: 'checkbox' } });
   bigCb.checked = cur.bigTiles;
   bigCb.addEventListener('change', () => {
@@ -395,6 +400,7 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
       h('label', { class: 'check' }, cb, h('span', { text: 'Alto contraste: pedras brancas, cores bem distintas e um símbolo para cada cor (● ▲ ■ ◆)' })),
       h('label', { class: 'check' }, bigCb, h('span', { text: 'Pedras grandes na mesa: não afasta tudo para caber; você rola a mesa com o dedo' })),
       h('label', { class: 'check' }, rackCb, h('span', { text: 'Recolher o cavalete quando não é a minha vez (toque na faixa para abrir)' })),
+      h('label', { class: 'check' }, nologCb, h('span', { text: 'Não guardar minhas partidas online (o registro anônimo ajuda a melhorar os bots; vale a partir da próxima sala)' })),
       h('label', { class: 'lbl', text: 'Tamanho das letras e botões' }),
       segmented([{ value: 0, label: 'Normal' }, { value: 1, label: 'Grande' }, { value: 2, label: 'Extra' }] as const, cur.size, (v) => {
         saveA11y({ ...loadA11y(), size: v });

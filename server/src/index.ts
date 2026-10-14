@@ -15,6 +15,11 @@ const cors = {
 };
 const json = (data: unknown, status = 200): Response => Response.json(data, { status, headers: cors });
 
+const isAdmin = (req: Request, env: Env): boolean => {
+  const key = req.headers.get('X-Admin-Key') ?? '';
+  return !!env.ADMIN_KEY && key.length === env.ADMIN_KEY.length && key === env.ADMIN_KEY;
+};
+
 async function iceServers(env: Env): Promise<unknown[]> {
   const stun = { urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] };
   if (!env.TURN_KEY_ID || !env.TURN_API_TOKEN) return [stun];
@@ -96,6 +101,27 @@ export default {
       const key = req.headers.get('X-Admin-Key') ?? '';
       if (!env.ADMIN_KEY || key.length !== env.ADMIN_KEY.length || key !== env.ADMIN_KEY) return json({ error: 'não autorizado' }, 401);
       await env.RANKING.get(env.RANKING.idFromName('global')).fetch('https://ranking/reset', { method: 'POST' });
+      return json({ ok: true });
+    }
+
+    // log de partidas online (anônimo). Tudo com a chave de administrador:
+    //   baixar:   curl -H "X-Admin-Key: <senha>" "https://SEU-SITE/api/games?after=0&limit=200"  (NDJSON; o cabeçalho X-Next-After diz de onde continuar)
+    //   resumo:   curl -H "X-Admin-Key: <senha>" https://SEU-SITE/api/stats
+    //   apagar:   curl -X POST -H "X-Admin-Key: <senha>" https://SEU-SITE/api/games/clear
+    if (url.pathname === '/api/games' && req.method === 'GET') {
+      if (!isAdmin(req, env)) return json({ error: 'não autorizado' }, 401);
+      const q = new URLSearchParams({ after: url.searchParams.get('after') ?? '0', limit: url.searchParams.get('limit') ?? '100' });
+      const r = await env.RANKING.get(env.RANKING.idFromName('global')).fetch(`https://ranking/games?${q}`);
+      return new Response(r.body, { status: r.status, headers: { ...cors, 'content-type': 'application/x-ndjson', 'X-Next-After': r.headers.get('x-next-after') ?? '0', 'Access-Control-Expose-Headers': 'X-Next-After' } });
+    }
+    if (url.pathname === '/api/stats' && req.method === 'GET') {
+      if (!isAdmin(req, env)) return json({ error: 'não autorizado' }, 401);
+      const r = await env.RANKING.get(env.RANKING.idFromName('global')).fetch('https://ranking/gamestats');
+      return json(await r.json());
+    }
+    if (url.pathname === '/api/games/clear' && req.method === 'POST') {
+      if (!isAdmin(req, env)) return json({ error: 'não autorizado' }, 401);
+      await env.RANKING.get(env.RANKING.idFromName('global')).fetch('https://ranking/gamesclear', { method: 'POST' });
       return json({ ok: true });
     }
 

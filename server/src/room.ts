@@ -22,6 +22,7 @@ import {
 } from '../../shared/protocol';
 import type { RecordEntry } from './ranking';
 import { GM_TITLE_WINS } from '../../shared/progress';
+import { logHead, logResult, logTurn, type GameLog, type GameLogHead, type LogPlayer, type LogTurn } from '../../shared/gamelog';
 import type { Env } from './env';
 
 interface Series {
@@ -52,6 +53,8 @@ interface Stored {
   recorded: boolean;
   /** jogadores com título de Grão-mestre (atualizado quando entram e quando conquistam) */
   titles?: Record<string, true>;
+  /** quem pediu para não guardar as próprias partidas no log anônimo (basta um na mesa para a partida não ser registrada) */
+  nolog?: Record<string, true>;
 }
 
 const IDLE_ROOM_MS = 10 * 60 * 1000;
@@ -85,6 +88,11 @@ export class GameRoom implements DurableObject {
   /** última jogada completa e válida do rascunho (o que fica na mesa se o tempo acabar) */
   private checkpoint: SetState[] | null = null;
   private loaded: Promise<void>;
+  /** cabeçalho do log da partida em andamento (undefined = ainda não lido do armazenamento; null = esta partida não é registrada) */
+  private lgHead: GameLogHead | null | undefined;
+  private lgSeq = 0;
+  /** quando começou a vez atual (só em memória; serve para anotar quanto tempo cada jogada levou) */
+  private turnStartedAt = 0;
 
   constructor(
     private ctx: DurableObjectState,
@@ -235,6 +243,7 @@ export class GameRoom implements DurableObject {
   private async destroy(): Promise<void> {
     const code = this.s?.code;
     this.s = null;
+    this.lgHead = undefined;
     this.photos = {};
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
@@ -504,6 +513,9 @@ export class GameRoom implements DurableObject {
     }
 
     await this.refreshTitle(id);
+    s.nolog ??= {};
+    if (msg.nolog === true) s.nolog[id] = true;
+    else delete s.nolog[id];
     delete s.away[id];
     const old = this.online().get(id);
     ws.serializeAttachment({ id });
@@ -618,16 +630,20 @@ export class GameRoom implements DurableObject {
   }
 
   /** `bonusMs`: tempo da animação da jogada que acabou de acontecer (o próximo jogador não perde esse tempo). */
-  private async afterGameChange(g: GameState, bonusMs = 0): Promise<void> {
+  private async afterGameChange(g: GameState, bonusMs = 0, timeout = false): Promise<void> {
     const s = this.s!;
+    const prev = s.game;
     s.game = g;
     this.draftTable = null;
     this.checkpoint = null;
+    await this.glogTurn(prev, g, timeout);
+    this.turnStartedAt = Date.now();
     if (g.phase === 'ended') {
       s.phase = 'ended';
       s.turnEndsAt = null;
       if (s.series) s.series.awaiting = null;
       await this.ctx.storage.setAlarm(Date.now() + ENDED_IDLE_MS);
+      await this.glogFinish(g);
       await this.record(g);
       await this.listing();
     } else {
@@ -719,14 +735,14 @@ export class GameRoom implements DurableObject {
     if (kept) {
       const ws = this.online().get(cur.id);
       if (ws) this.send(ws, { t: 'notice', text: 'Tempo esgotado: sua jogada válida ficou na mesa; só a parte não finalizada voltou.' });
-      await this.afterGameChange(kept);
+      await this.afterGameChange(kept, 0, true);
       return;
     }
     const step = drawTurn(s.game, cur.id, true);
     if (!step.ok) return;
     let g = step.state;
     if (g.players.find((p) => p.id === cur.id)!.timeouts >= MAX_TIMEOUTS) g = removePlayer(g, cur.id);
-    await this.afterGameChange(g);
+    await this.afterGameChange(g, 0, true);
   }
 
   /** Começa uma partida com estes jogadores (do saguão ou da sessão em andamento). */
@@ -735,7 +751,71 @@ export class GameRoom implements DurableObject {
     s.game = createGame(order.map((p) => ({ id: p.id, name: p.name, isBot: !!s.bots[p.id] })), Math.random, first);
     s.phase = 'playing';
     s.recorded = false;
+    await this.glogStart(s.game);
     await this.afterGameChange(s.game);
+  }
+
+  // ---------- log de partidas (anônimo; nunca pode atrapalhar o jogo) ----------
+  private async glogHeadLoad(): Promise<GameLogHead | null> {
+    if (this.lgHead === undefined) this.lgHead = (await this.ctx.storage.get<GameLogHead>('lg:head')) ?? null;
+    return this.lgHead;
+  }
+
+  private async glogClear(): Promise<void> {
+    const keys = [...(await this.ctx.storage.list({ prefix: 'lg:' })).keys()];
+    for (let i = 0; i < keys.length; i += 128) await this.ctx.storage.delete(keys.slice(i, i + 128));
+  }
+
+  private optedOut(g: GameState): boolean {
+    return g.players.some((p) => !p.isBot && this.s?.nolog?.[p.id]);
+  }
+
+  private async glogStart(g: GameState): Promise<void> {
+    this.lgHead = null;
+    try {
+      const s = this.s!;
+      await this.glogClear();
+      if (!g.players.some((p) => !p.isBot) || this.optedOut(g)) return;
+      const players: LogPlayer[] = g.players.map((p, seat) => (p.isBot ? { seat, kind: 'b', level: s.bots[p.id], persona: p.id } : { seat, kind: 'h' }));
+      const id = Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, '0')).join('');
+      this.lgHead = logHead(g, players, { id, t: Date.now(), turnSeconds: s.turnSeconds });
+      await this.ctx.storage.put('lg:head', this.lgHead);
+    } catch (e) {
+      this.lgHead = null;
+      console.error('glog start', e);
+    }
+  }
+
+  private async glogTurn(prev: GameState | null, g: GameState, timeout: boolean): Promise<void> {
+    try {
+      const head = await this.glogHeadLoad();
+      if (!head || !prev || prev === g) return;
+      if (this.optedOut(g)) {
+        // alguém pediu para não guardar no meio da partida: apaga o que já havia
+        this.lgHead = null;
+        await this.glogClear();
+        return;
+      }
+      const entries = logTurn(prev, g, { ms: this.turnStartedAt ? Date.now() - this.turnStartedAt : undefined, timeout });
+      for (const e of entries) await this.ctx.storage.put(`lg:t:${String(Date.now()).padStart(14, '0')}:${String(this.lgSeq++ % 10000).padStart(4, '0')}`, e);
+    } catch (e) {
+      console.error('glog turn', e);
+    }
+  }
+
+  private async glogFinish(g: GameState): Promise<void> {
+    try {
+      const head = await this.glogHeadLoad();
+      if (!head) return;
+      this.lgHead = null;
+      const turns = [...(await this.ctx.storage.list<LogTurn>({ prefix: 'lg:t:' })).values()];
+      await this.glogClear();
+      if (this.optedOut(g)) return;
+      const log: GameLog = { ...head, end: Date.now(), turns, result: logResult(g) };
+      await this.env.RANKING.get(this.env.RANKING.idFromName('global')).fetch('https://ranking/gamelog', { method: 'POST', body: JSON.stringify(log) });
+    } catch (e) {
+      console.error('glog finish', e);
+    }
   }
 
   /** Quem segue na próxima partida: bots + humanos conectados que ainda não saíram (e, se `onlyConfirmed`, os que aceitaram). */

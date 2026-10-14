@@ -1,5 +1,6 @@
 import type { RankingRow } from '../../shared/protocol';
 import { GM_TITLE_WINS } from '../../shared/progress';
+import { summarize, type GameLog } from '../../shared/gamelog';
 
 export interface RecordEntry {
   id: string;
@@ -17,6 +18,19 @@ type Row = {
   best: number;
 };
 
+const MAX_RECORDS = 2000;
+const MAX_GAMES = 50000;
+
+type GameRow = { id: number; gid: string; t: number; dur: number; players: number; humans: number; levels: string; human_won: number; turns: number; reason: string; human_pts: number; bot_pts: number; partial: number };
+
+async function gzip(text: string): Promise<ArrayBuffer> {
+  return new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+}
+
+async function gunzip(data: ArrayBuffer): Promise<string> {
+  return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+}
+
 /** Ranking global: quem tem a MENOR média de pontos na mão por partida fica em cima (mínimo de 3 partidas para o ranking principal). */
 export class Ranking implements DurableObject {
   private sql: SqlStorage;
@@ -30,6 +44,14 @@ export class Ranking implements DurableObject {
     );
     this.sql.exec('CREATE TABLE IF NOT EXISTS gm (id TEXT PRIMARY KEY, wins INTEGER NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS names (id TEXT PRIMARY KEY, norm TEXT NOT NULL UNIQUE, name TEXT NOT NULL)');
+    // log de partidas online (anônimo): uma linha de resumo por partida e o registro completo comprimido
+    this.sql.exec(
+      `CREATE TABLE IF NOT EXISTS games (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, gid TEXT NOT NULL, t INTEGER NOT NULL, dur INTEGER NOT NULL, players INTEGER NOT NULL,
+        humans INTEGER NOT NULL, levels TEXT NOT NULL, human_won INTEGER NOT NULL, turns INTEGER NOT NULL, reason TEXT NOT NULL,
+        human_pts INTEGER NOT NULL, bot_pts INTEGER NOT NULL, partial INTEGER NOT NULL)`,
+    );
+    this.sql.exec('CREATE TABLE IF NOT EXISTS records (id INTEGER PRIMARY KEY, data BLOB NOT NULL)');
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -103,6 +125,75 @@ export class Ranking implements DurableObject {
         .toArray();
       const out: RankingRow[] = rows.map((r) => ({ id: r.id, name: r.name, games: r.games, wins: r.wins, avg: Math.round((r.total / r.games) * 10) / 10, best: r.best }));
       return Response.json(out);
+    }
+    // log de partidas: o servidor da sala manda o registro pronto; guardamos o resumo e o registro comprimido
+    if (req.method === 'POST' && url.pathname === '/gamelog') {
+      const log = (await req.json().catch(() => null)) as GameLog | null;
+      if (!log || !Array.isArray(log.turns) || !Array.isArray(log.players) || typeof log.id !== 'string') return Response.json({ ok: false }, { status: 400 });
+      const sm = summarize(log);
+      const row = this.sql
+        .exec<{ id: number }>(
+          `INSERT INTO games (gid, t, dur, players, humans, levels, human_won, turns, reason, human_pts, bot_pts, partial)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+          sm.id.slice(0, 16),
+          sm.t,
+          sm.dur,
+          sm.players,
+          sm.humans,
+          sm.levels,
+          sm.humanWon ? 1 : 0,
+          sm.turns,
+          sm.reason,
+          sm.humanPts,
+          sm.botPts,
+          sm.partial ? 1 : 0,
+        )
+        .one();
+      this.sql.exec('INSERT INTO records (id, data) VALUES (?, ?)', row.id, await gzip(JSON.stringify(log)));
+      // limites: os 2.000 registros mais recentes e os 50.000 resumos mais recentes
+      this.sql.exec('DELETE FROM records WHERE id <= ?', row.id - MAX_RECORDS);
+      this.sql.exec('DELETE FROM games WHERE id <= ?', row.id - MAX_GAMES);
+      return Response.json({ ok: true, id: row.id });
+    }
+    // exporta (NDJSON): uma linha por partida com o resumo e o registro completo, a partir do id `after`
+    if (req.method === 'GET' && url.pathname === '/games') {
+      const after = Math.max(0, Math.floor(Number(url.searchParams.get('after')) || 0));
+      const limit = Math.min(500, Math.max(1, Math.floor(Number(url.searchParams.get('limit')) || 100)));
+      const rows = this.sql
+        .exec<GameRow & { data: ArrayBuffer | null }>(
+          `SELECT g.*, r.data FROM games g LEFT JOIN records r ON r.id = g.id WHERE g.id > ? ORDER BY g.id LIMIT ?`,
+          after,
+          limit,
+        )
+        .toArray();
+      const lines: string[] = [];
+      for (const r of rows) {
+        const log = r.data ? JSON.parse(await gunzip(r.data)) : null;
+        lines.push(JSON.stringify({ n: r.id, summary: { id: r.gid, t: r.t, dur: r.dur, players: r.players, humans: r.humans, levels: r.levels, humanWon: !!r.human_won, turns: r.turns, reason: r.reason, humanPts: r.human_pts, botPts: r.bot_pts, partial: !!r.partial }, log }));
+      }
+      return new Response(lines.join('\n') + (lines.length ? '\n' : ''), { headers: { 'content-type': 'application/x-ndjson', 'x-next-after': String(rows.length ? rows[rows.length - 1]!.id : after) } });
+    }
+    // resumo agregado por combinação de bots (partidas interrompidas ficam fora das taxas)
+    if (req.method === 'GET' && url.pathname === '/gamestats') {
+      const rows = this.sql
+        .exec<{ levels: string; humans: number; games: number; human_wins: number; turns: number; human_pts: number; bot_pts: number; dur: number }>(
+          `SELECT levels, humans, COUNT(*) AS games, SUM(human_won) AS human_wins, AVG(turns) AS turns,
+                  AVG(NULLIF(human_pts, -1)) AS human_pts, AVG(NULLIF(bot_pts, -1)) AS bot_pts, AVG(dur) AS dur
+           FROM games WHERE partial = 0 GROUP BY levels, humans ORDER BY games DESC`,
+        )
+        .toArray();
+      const total = this.sql.exec<{ n: number; p: number }>('SELECT COUNT(*) AS n, COALESCE(SUM(partial), 0) AS p FROM games').one();
+      const r1 = (v: number | null): number | null => (v === null ? null : Math.round(v * 10) / 10);
+      return Response.json({
+        partidas: total.n,
+        interrompidas: total.p,
+        porNivel: rows.map((r) => ({ bots: r.levels || '(só humanos)', humanos: r.humans, partidas: r.games, humanoVenceu: r.human_wins, taxaHumano: Math.round((100 * r.human_wins) / r.games), turnosMedios: r1(r.turns), pontosHumano: r1(r.human_pts), pontosBot: r1(r.bot_pts), duracaoMediaS: r1(r.dur) })),
+      });
+    }
+    if (req.method === 'POST' && url.pathname === '/gamesclear') {
+      this.sql.exec('DELETE FROM records');
+      this.sql.exec('DELETE FROM games');
+      return new Response('ok');
     }
     if (req.method === 'POST' && url.pathname === '/reset') {
       this.sql.exec('DELETE FROM players');
