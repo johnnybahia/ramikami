@@ -64,7 +64,11 @@ const DEFAULTS: Params = {
   outFocus: 99,
 };
 
-const P: Params = DEFAULTS;
+const P: Params = { ...DEFAULTS };
+
+/** gancho de medição (scripts/sim-gm-sweep.ts): objeto vivo dos parâmetros e os valores de fábrica */
+export const GM_TUNING: Params = P;
+export const GM_DEFAULTS: Readonly<Params> = DEFAULTS;
 
 // ---------------------------------------------------------------------------------------------
 // Busca de "bater": cobertura exata de TODA a mesa em foco + TODO o cavalete (cópia enxuta do solver do Mestre)
