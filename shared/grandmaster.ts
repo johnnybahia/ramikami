@@ -25,7 +25,7 @@ import type { LevelCfg } from './bot';
 // ---------------------------------------------------------------------------------------------
 // Parâmetros
 // ---------------------------------------------------------------------------------------------
-interface Params {
+export interface Params {
   /** segura o coringa do cavalete (false = joga como o Mestre) */
   hold: boolean;
   /** quantos coringas ficam sempre guardados; os que passam disso jogam como o Mestre (2 = guarda todos) */
@@ -433,7 +433,18 @@ function tryOut(state: GameState): SetState[] | null {
 // Política de coringa
 // ---------------------------------------------------------------------------------------------
 /** Jogada do bot: nova mesa inteira, ou null para comprar uma pedra. Mesma assinatura de botMove em shared/bot.ts. */
-export function grandmasterMove(state: GameState, persona: LevelCfg, _rng: () => number): SetState[] | null {
+export function grandmasterMove(state: GameState, persona: LevelCfg, rng: () => number): SetState[] | null {
+  if (!persona.gm) return chooseMove(state, persona, rng);
+  const saved = { ...P };
+  Object.assign(P, persona.gm); // ajustes do nível (ex.: o Mestre usa o motor sem segurar o coringa); síncrono, então não vaza
+  try {
+    return chooseMove(state, persona, rng);
+  } finally {
+    Object.assign(P, saved);
+  }
+}
+
+function chooseMove(state: GameState, persona: LevelCfg, _rng: () => number): SetState[] | null {
   const me = state.players[state.turn]!;
   const nJ = me.rack.reduce((a, t) => a + (isJoker(t) ? 1 : 0), 0);
   const full = genMove(state, persona, nJ); // o que o Mestre jogaria (todos os coringas à disposição)

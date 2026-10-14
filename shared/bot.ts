@@ -4,7 +4,7 @@ import { findCompactSpot, relayout, type SetState } from './layout';
 import type { GameState } from './game';
 import { key, packCounts, type Cand } from './pack';
 import { solveTable } from './solver';
-import { grandmasterMove } from './grandmaster';
+import { grandmasterMove, type Params as GmParams } from './grandmaster';
 
 export type BotLevel = 'easy' | 'normal' | 'hard' | 'master' | 'grandmaster';
 export const BOT_LEVELS: readonly BotLevel[] = ['easy', 'normal', 'hard', 'master', 'grandmaster'];
@@ -30,8 +30,10 @@ export interface LevelCfg {
   holdJokers: boolean;
   /** fração do tempo do turno que levam "pensando" (min, max): nunca jogam de imediato */
   think: [number, number];
-  /** motor de jogo próprio (o Grão-mestre usa shared/grandmaster.ts); sem isso vale o motor guloso comum */
+  /** motor de jogo próprio (shared/grandmaster.ts: Mestre e Grão-mestre); sem isso vale o motor guloso comum */
   engine?: 'grandmaster';
+  /** ajustes do motor próprio (ex.: o Mestre usa a busca de bater, mas não segura o coringa) */
+  gm?: Partial<GmParams>;
   lines: { play: string[]; draw: string[] };
 }
 
@@ -64,20 +66,20 @@ export const LEVEL_CFG: Record<BotLevel, LevelCfg> = {
   },
   hard: {
     label: 'Difícil',
-    blurb: 'Reorganiza a mesa quase sempre e aproveita bem as pedras.',
+    blurb: 'Reorganiza a mesa a cada jogada e aproveita bem as pedras.',
     budget: 15000,
     extend: true,
     jokers: true,
     skip: 0,
     rearrange: 10000,
-    rearrangeChance: 0.7,
+    rearrangeChance: 1,
     holdJokers: false,
     think: [0.3, 0.5],
     lines: { play: ['Olha isso!', 'Tudo no lugar.', 'Ousadia!'], draw: ['Droga!', 'Próxima eu pego.', 'Paciência.'] },
   },
   master: {
     label: 'Mestre',
-    blurb: 'Busca máxima, reorganiza a mesa inteira e não perde jogada.',
+    blurb: 'Busca máxima, reorganiza a mesa inteira, procura fechar a partida e não perde jogada.',
     budget: 20000,
     extend: true,
     jokers: true,
@@ -86,6 +88,8 @@ export const LEVEL_CFG: Record<BotLevel, LevelCfg> = {
     rearrangeChance: 1,
     holdJokers: false,
     think: [0.35, 0.55],
+    engine: 'grandmaster',
+    gm: { hold: false, deepRack: 0 },
     lines: { play: ['Xeque.', 'O caminho é este.', 'Previsível.'], draw: ['Uma pausa estratégica.', 'Interessante...', 'Sem jogada ótima.'] },
   },
   grandmaster: {
