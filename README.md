@@ -76,7 +76,7 @@ scripts/  sw.template.js (service worker), ícones, teste e2e do servidor
 
 ## Log de partidas (para melhorar os bots)
 
-As partidas em **sala online** (com pelo menos um humano) são registradas de forma **anônima**: só o lugar na mesa, "humano ou bot", o nível do bot, o cavalete de quem joga antes de cada jogada, a ação (jogar, comprar, passar, sair) e a mesa resultante. Não há nome, foto nem identificador de jogador. Partidas offline não saem do aparelho. Quem marcar *Visual → Não guardar minhas partidas online* não é registrado (e a partida inteira deixa de ser registrada se houver um só na mesa). Ficam as 2.000 partidas completas mais recentes (comprimidas, no Durable Object do ranking) e 50.000 resumos.
+As partidas em **sala online** (com pelo menos um humano) são registradas de forma **anônima**: só o lugar na mesa, "humano ou bot", o nível do bot, o cavalete de quem joga antes de cada jogada, a ação (jogar, comprar, passar, sair) e a mesa resultante. Não há nome, foto nem identificador de jogador, e a hora de início é arredondada para a hora cheia (sem hora de término), para não cruzar com o ranking público. Partidas offline não saem do aparelho. Quem marcar *Visual → Não guardar minhas partidas online* não é registrado (e a partida inteira deixa de ser registrada se houver um só na mesa). Ficam as 2.000 partidas completas mais recentes (comprimidas, no Durable Object do ranking) e 50.000 resumos.
 
 Com a senha de administrador (`ADMIN_KEY`, veja acima):
 

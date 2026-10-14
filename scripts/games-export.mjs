@@ -6,13 +6,17 @@ const BASE = process.env.BASE ?? 'http://localhost:8787';
 const KEY = process.env.ADMIN_KEY ?? '';
 const out = process.argv[2] ?? 'partidas.ndjson';
 const nextFile = `${out}.next`;
-let after = existsSync(nextFile) ? Number(readFileSync(nextFile, 'utf8')) || 0 : 0;
+let after = existsSync(nextFile) && existsSync(out) ? Number(readFileSync(nextFile, 'utf8')) || 0 : 0; // sem o arquivo de saída, recomeça do zero
 if (after === 0) writeFileSync(out, '');
 let total = 0;
 for (;;) {
   const r = await fetch(`${BASE}/api/games?after=${after}&limit=200`, { headers: { 'X-Admin-Key': KEY } });
   if (r.status === 401) {
     console.error('não autorizado: confira ADMIN_KEY');
+    process.exit(1);
+  }
+  if (!r.ok) {
+    console.error(`erro do servidor: HTTP ${r.status}`);
     process.exit(1);
   }
   const text = await r.text();

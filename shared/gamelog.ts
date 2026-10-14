@@ -2,6 +2,9 @@
 // bots erram e como a dificuldade se comporta com humanos. É ANÔNIMO: só lugar na mesa, "humano ou bot" e o nível do bot;
 // nada de nome, foto ou identificador do jogador.
 //
+// A hora de início é arredondada para a hora cheia e não há hora de término (só a duração em segundos), para que o registro
+// não possa ser cruzado, ao milissegundo, com o ranking público.
+//
 // Reconstrução: mãos iniciais + ordem do pote (`deal`) + `turns` bastam para refazer a partida; cada jogada também traz o
 // cavalete de quem jogou ANTES dela, então dá para analisar uma jogada isolada sem refazer tudo.
 import type { GameState } from './game';
@@ -55,7 +58,7 @@ export interface GameLogHead {
   v: number;
   /** identificador aleatório da partida */
   id: string;
-  /** começo (ms desde 1970) */
+  /** começo (ms desde 1970), arredondado para a hora cheia */
   t: number;
   turnSeconds: number;
   players: LogPlayer[];
@@ -65,8 +68,8 @@ export interface GameLogHead {
 }
 
 export interface GameLog extends GameLogHead {
-  /** fim (ms desde 1970) */
-  end: number;
+  /** duração da partida em segundos */
+  dur: number;
   turns: LogTurn[];
   result: LogResult | null;
 }
@@ -118,13 +121,20 @@ export function logTurn(prev: GameState, next: GameState, info: { ms?: number; t
   const np = next.players[mover]!;
   const moverLeft = !mp.left && np.left;
 
+  // quem estava na vez e saiu logo depois de comprar (3º estouro de tempo: compra e é removido): a compra também conta
+  if (moverLeft && np.rack.length > mp.rack.length) {
+    const d: LogTurn = { n: prev.turnNo, s: mover, a: 'd', rk: mp.rack.slice().sort((x, y) => x - y), mel: mp.melded, ...base };
+    if (info.timeout) d.to = true;
+    if (info.ms !== undefined) d.ms = Math.max(0, Math.round(info.ms));
+    out.push(d);
+  }
   prev.players.forEach((p, seat) => {
-    if (!p.left && next.players[seat]!.left) {
-      out.push({ n: prev.turnNo, s: seat, a: 'l', rk: p.rack.slice().sort((a, b) => a - b), mel: p.melded, ...base });
-    }
+    const after = next.players[seat]!;
+    if (!p.left && after.left) out.push({ n: prev.turnNo, s: seat, a: 'l', rk: after.rack.slice().sort((a, b) => a - b), mel: p.melded, ...base });
   });
 
-  const acted = next.turnNo !== prev.turnNo || np.rack.length !== mp.rack.length || next.phase !== prev.phase;
+  // a mudança de fase sozinha só vale como "passou" se não foi o fim por saída de alguém (que não é jogada de quem estava na vez)
+  const acted = next.turnNo !== prev.turnNo || np.rack.length !== mp.rack.length || (next.phase !== prev.phase && next.result?.reason !== 'left');
   if (acted && !moverLeft && !mp.left) {
     const a: LogTurn['a'] = np.rack.length < mp.rack.length ? 'p' : np.rack.length > mp.rack.length ? 'd' : 'x';
     const t: LogTurn = { n: prev.turnNo, s: mover, a, rk: mp.rack.slice().sort((x, y) => x - y), mel: mp.melded, ...base };
@@ -158,7 +168,7 @@ export function summarize(log: GameLog): GameSummary {
   return {
     id: log.id,
     t: log.t,
-    dur: Math.max(0, Math.round((log.end - log.t) / 1000)),
+    dur: Math.max(0, Math.round(log.dur)),
     players: log.players.length,
     humans: humans.length,
     levels: bots

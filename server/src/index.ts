@@ -15,9 +15,14 @@ const cors = {
 };
 const json = (data: unknown, status = 200): Response => Response.json(data, { status, headers: cors });
 
+/** Compara a chave de administrador sem parar no primeiro caractere diferente. */
 const isAdmin = (req: Request, env: Env): boolean => {
   const key = req.headers.get('X-Admin-Key') ?? '';
-  return !!env.ADMIN_KEY && key.length === env.ADMIN_KEY.length && key === env.ADMIN_KEY;
+  const want = env.ADMIN_KEY ?? '';
+  if (!want || key.length !== want.length) return false;
+  let diff = 0;
+  for (let i = 0; i < want.length; i++) diff |= key.charCodeAt(i) ^ want.charCodeAt(i);
+  return diff === 0;
 };
 
 async function iceServers(env: Env): Promise<unknown[]> {
@@ -112,12 +117,12 @@ export default {
       if (!isAdmin(req, env)) return json({ error: 'não autorizado' }, 401);
       const q = new URLSearchParams({ after: url.searchParams.get('after') ?? '0', limit: url.searchParams.get('limit') ?? '100' });
       const r = await env.RANKING.get(env.RANKING.idFromName('global')).fetch(`https://ranking/games?${q}`);
-      return new Response(r.body, { status: r.status, headers: { ...cors, 'content-type': 'application/x-ndjson', 'X-Next-After': r.headers.get('x-next-after') ?? '0', 'Access-Control-Expose-Headers': 'X-Next-After' } });
+      return new Response(r.body, { status: r.status, headers: { ...cors, 'content-type': 'application/x-ndjson', 'Cache-Control': 'no-store', 'X-Next-After': r.headers.get('x-next-after') ?? '0', 'Access-Control-Expose-Headers': 'X-Next-After' } });
     }
     if (url.pathname === '/api/stats' && req.method === 'GET') {
       if (!isAdmin(req, env)) return json({ error: 'não autorizado' }, 401);
       const r = await env.RANKING.get(env.RANKING.idFromName('global')).fetch('https://ranking/gamestats');
-      return json(await r.json());
+      return Response.json(await r.json(), { headers: { ...cors, 'Cache-Control': 'no-store' } });
     }
     if (url.pathname === '/api/games/clear' && req.method === 'POST') {
       if (!isAdmin(req, env)) return json({ error: 'não autorizado' }, 401);

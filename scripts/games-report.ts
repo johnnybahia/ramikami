@@ -18,10 +18,12 @@ if (!file) {
   console.log('uso: npx tsx scripts/games-report.ts <arquivo.ndjson> [--missed [--humans]] [--replay <id>]');
   process.exit(1);
 }
+const seen = new Set<string>(); // uma queda no meio da exportação pode repetir linhas: ignora as repetidas
 const rows = readFileSync(file, 'utf8')
   .split('\n')
   .filter((l) => l.trim())
-  .map((l) => JSON.parse(l) as { n: number; summary: GameSummary; log: GameLog | null });
+  .map((l) => JSON.parse(l) as { n: number; summary: GameSummary; log: GameLog | null })
+  .filter((r) => (seen.has(`${r.n}:${r.summary.id}`) ? false : (seen.add(`${r.n}:${r.summary.id}`), true)));
 const logs = rows.filter((r) => r.log).map((r) => r.log!);
 
 const tile = (id: number): string => (isJoker(id) ? '★' : `${'●▲■◆'[tileColor(id)]}${tileNum(id)}`);

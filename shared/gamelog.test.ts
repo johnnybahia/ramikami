@@ -25,7 +25,7 @@ function play(levels: BotLevel[], seed: number, leaveAt = 0): { log: GameLog; fi
     }
     turns.push(...logTurn(prev, g, { ms: 1234 }));
   }
-  return { log: { ...head, end: 61_000, turns, result: logResult(g) }, final: g };
+  return { log: { ...head, dur: 60, turns, result: logResult(g) }, final: g };
 }
 
 describe('log de partidas', () => {
@@ -73,6 +73,27 @@ describe('log de partidas', () => {
     expect(left.log.turns.some((t) => t.a === 'l')).toBe(true);
     expect(summarize(left.log)).toMatchObject({ reason: 'left', partial: true });
   }, 60000);
+
+  it('o humano sai na vez do bot e a partida acaba: só a saída é registrada (nada de "passou" falso para o bot)', () => {
+    const g = createGame([{ id: 'h', name: 'H' }, { id: 'b', name: 'B', isBot: true }], mulberry32(7), 'b'); // começa o bot
+    const out = removePlayer(g, 'h');
+    expect(out.phase).toBe('ended');
+    expect(logTurn(g, out).map((t) => [t.a, t.s])).toEqual([['l', 0]]);
+  });
+
+  it('3º estouro de tempo: a compra e a saída aparecem, nessa ordem, e o pote fecha a conta', () => {
+    const g = createGame([{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }], mulberry32(9), 'a');
+    const drew = drawTurn(g, 'a', true);
+    expect(drew.ok).toBe(true);
+    if (!drew.ok) return;
+    const out = removePlayer(drew.state, 'a');
+    const rows = logTurn(g, out, { timeout: true });
+    expect(rows.map((t) => [t.a, t.s])).toEqual([['d', 0], ['l', 0]]);
+    expect(rows[0]!.to).toBe(true);
+    expect(rows[0]!.rk.length).toBe(14); // cavalete de antes da compra
+    expect(rows[1]!.rk.length).toBe(15); // ao sair já tinha a pedra comprada
+    expect(rows[0]!.pool).toBe(g.pool.length - 1);
+  });
 
   it('estado igual não gera registro; saída fora da vez gera só a linha de saída', () => {
     const g = createGame([{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }], mulberry32(5));
