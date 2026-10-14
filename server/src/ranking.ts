@@ -20,6 +20,7 @@ type Row = {
 
 const MAX_RECORDS = 2000;
 const MAX_GAMES = 50000;
+const MAX_ERRORS = 300;
 
 type GameRow = { id: number; gid: string; t: number; dur: number; players: number; humans: number; levels: string; human_won: number; turns: number; reason: string; human_pts: number; bot_pts: number; partial: number };
 
@@ -52,6 +53,8 @@ export class Ranking implements DurableObject {
         human_pts INTEGER NOT NULL, bot_pts INTEGER NOT NULL, partial INTEGER NOT NULL)`,
     );
     this.sql.exec('CREATE TABLE IF NOT EXISTS records (id INTEGER PRIMARY KEY, data BLOB NOT NULL)');
+    // erros do servidor das salas (só os últimos 300): sem isso um travamento em produção não deixa rastro
+    this.sql.exec('CREATE TABLE IF NOT EXISTS errors (id INTEGER PRIMARY KEY AUTOINCREMENT, t INTEGER NOT NULL, w TEXT NOT NULL, msg TEXT NOT NULL, extra TEXT NOT NULL)');
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -189,6 +192,23 @@ export class Ranking implements DurableObject {
         interrompidas: total.p,
         porNivel: rows.map((r) => ({ bots: r.levels || '(só humanos)', humanos: r.humans, partidas: r.games, humanoVenceu: r.human_wins, taxaHumano: Math.round((100 * r.human_wins) / r.games), turnosMedios: r1(r.turns), pontosHumano: r1(r.human_pts), pontosBot: r1(r.bot_pts), duracaoMediaS: r1(r.dur) })),
       });
+    }
+    if (req.method === 'POST' && url.pathname === '/err') {
+      const b = (await req.json().catch(() => null)) as { w?: string; msg?: string; extra?: unknown } | null;
+      if (!b) return Response.json({ ok: false }, { status: 400 });
+      const row = this.sql
+        .exec<{ id: number }>('INSERT INTO errors (t, w, msg, extra) VALUES (?, ?, ?, ?) RETURNING id', Date.now(), String(b.w ?? '').slice(0, 40), String(b.msg ?? '').slice(0, 600), JSON.stringify(b.extra ?? null).slice(0, 600))
+        .one();
+      this.sql.exec('DELETE FROM errors WHERE id <= ?', row.id - MAX_ERRORS);
+      return Response.json({ ok: true });
+    }
+    if (req.method === 'GET' && url.pathname === '/errors') {
+      const rows = this.sql.exec<{ id: number; t: number; w: string; msg: string; extra: string }>('SELECT id, t, w, msg, extra FROM errors ORDER BY id DESC LIMIT 100').toArray();
+      return Response.json(rows.map((r) => ({ n: r.id, quando: new Date(r.t).toISOString(), onde: r.w, erro: r.msg, detalhe: JSON.parse(r.extra) })));
+    }
+    if (req.method === 'POST' && url.pathname === '/errorsclear') {
+      this.sql.exec('DELETE FROM errors');
+      return new Response('ok');
     }
     if (req.method === 'POST' && url.pathname === '/gamesclear') {
       this.sql.exec('DELETE FROM records');

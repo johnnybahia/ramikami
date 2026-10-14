@@ -130,6 +130,18 @@ export default {
       return json({ ok: true });
     }
 
+    // erros do servidor das salas (travamentos de bot etc.): curl -H "X-Admin-Key: <senha>" https://SEU-SITE/api/errors
+    if (url.pathname === '/api/errors' && req.method === 'GET') {
+      if (!isAdmin(req, env)) return json({ error: 'não autorizado' }, 401);
+      const r = await env.RANKING.get(env.RANKING.idFromName('global')).fetch('https://ranking/errors');
+      return Response.json(await r.json(), { headers: { ...cors, 'Cache-Control': 'no-store' } });
+    }
+    if (url.pathname === '/api/errors/clear' && req.method === 'POST') {
+      if (!isAdmin(req, env)) return json({ error: 'não autorizado' }, 401);
+      await env.RANKING.get(env.RANKING.idFromName('global')).fetch('https://ranking/errorsclear', { method: 'POST' });
+      return json({ ok: true });
+    }
+
     if (url.pathname === '/api/ice' && req.method === 'GET') return json({ iceServers: await iceServers(env) });
 
     if (url.pathname.startsWith('/api/')) return json({ error: 'not found' }, 404);
