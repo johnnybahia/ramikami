@@ -135,6 +135,7 @@ export class GameScreen {
     this.buildTopbar();
     this.buildActions();
     document.addEventListener('pointerdown', this.unlock, { once: true });
+    document.addEventListener('visibilitychange', this.onVisible);
     this.offPwa = onPwa((s) => {
       this.pwa = s;
       this.renderUpdate();
@@ -240,8 +241,14 @@ export class GameScreen {
     return this.busy() && this.busyPrevTurn ? this.busyPrevTurn : v.turnId;
   }
 
+  /** Voltou para a aba: se a jogada alheia já devia ter terminado (o relógio andou enquanto a cena estava pausada), pousa as pedras. */
+  private onVisible = (): void => {
+    if (!document.hidden && this.view && !this.busy()) this.scene.finishRemote();
+  };
+
   private afterBusy(): void {
     if (!this.view) return;
+    this.scene.finishRemote(); // aba escondida ou aparelho lento: o que ainda estava voando pousa antes de liberar a vez
     this.busyPrevTurn = null;
     this.renderBoxes();
     this.tickUi();
@@ -1107,6 +1114,7 @@ export class GameScreen {
     window.clearInterval(this.tick);
     window.clearTimeout(this.draftTimer);
     document.removeEventListener('pointerdown', this.unlock);
+    document.removeEventListener('visibilitychange', this.onVisible);
     this.offPwa();
     this.closeSeats();
     this.b.leave();

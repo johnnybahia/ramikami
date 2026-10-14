@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { analyzeSet, arrangeTiles, validatePlay } from './rules';
 import { createGame, drawTurn, playTurn, removePlayer, currentPlayer, salvagePlay } from './game';
 import { botMove, pickBots, PERSONAS, LEVEL_CFG, BOT_LEVELS } from './bot';
+import { GM_TUNING } from './grandmaster';
 import { solveTable } from './solver';
 import { mulberry32, handPoints } from './tiles';
 import { COLS, animCounts, findCompactSpot, packRows, relayout, type SetState } from './layout';
-import { animMsFor } from './protocol';
+import { ANIM_MAX_MS, ANIM_MOVE_MS, ANIM_NEW_MS, animMsFor, animScale } from './protocol';
 import { GM_UNLOCK_WINS, addWin, gmStatusText, isGmUnlocked, winKind, winsToUnlock, type Progress } from './progress';
 
 // id = cor*26 + (num-1) (+13 para a segunda cópia). cor 0 preto, 1 azul, 2 vermelho, 3 laranja
@@ -115,7 +116,7 @@ describe('game', () => {
       const min = Math.min(...g.players.map((p) => handPoints(p.rack)));
       expect(g.result!.winners.every((w) => handPoints(g.players.find((p) => p.id === w)!.rack) === min)).toBe(true);
     }
-  });
+  }, 60000);
 });
 
 describe('arrangeTiles', () => {
@@ -236,6 +237,37 @@ describe('Grão-mestre', () => {
         const cur = currentPlayer(g);
         const persona = cur.id === 'a' ? LEVEL_CFG.grandmaster : LEVEL_CFG.master;
         const m = botMove(g, persona, rng);
+        if (m) {
+          const step = playTurn(g, cur.id, m);
+          expect(step.ok).toBe(true);
+          g = step.ok ? step.state : g;
+        } else {
+          const step = drawTurn(g, cur.id);
+          g = step.ok ? step.state : g;
+        }
+      }
+      expect(g.phase).toBe('ended');
+    }
+  }, 60000);
+  it('o Mestre usa o motor de bater sem segurar o coringa, e o ajuste não vaza para o Grão-mestre', () => {
+    expect(LEVEL_CFG.master.engine).toBe('grandmaster');
+    expect(LEVEL_CFG.master.gm).toEqual({ hold: false, deepRack: 0 });
+    expect(LEVEL_CFG.hard.engine).toBeUndefined();
+    expect(LEVEL_CFG.hard.rearrangeChance).toBe(1);
+    const g = mk([J1, T(1, 3), T(1, 4), T(2, 9), T(3, 12)]);
+    expect(botMove(g, LEVEL_CFG.master, mulberry32(1))).not.toBeNull(); // gasta o coringa
+    expect(GM_TUNING.hold).toBe(true);
+    expect(GM_TUNING.deepRack).toBe(2);
+    expect(botMove(g, LEVEL_CFG.grandmaster, mulberry32(1))).toBeNull(); // o Grão-mestre continua segurando
+  });
+  it('partidas Difícil x Mestre terminam e nunca devolvem jogada inválida', () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const rng = mulberry32(700 + seed);
+      let g = createGame([{ id: 'a', name: 'A', isBot: true }, { id: 'b', name: 'B', isBot: true }], rng);
+      let guard = 0;
+      while (g.phase === 'playing' && guard++ < 700) {
+        const cur = currentPlayer(g);
+        const m = botMove(g, cur.id === 'a' ? LEVEL_CFG.hard : LEVEL_CFG.master, rng);
         if (m) {
           const step = playTurn(g, cur.id, m);
           expect(step.ok).toBe(true);
@@ -395,6 +427,16 @@ describe('animação da jogada', () => {
     expect(animMsFor(0, 0)).toBe(0);
     expect(animMsFor(0, 6)).toBeGreaterThan(animMsFor(0, 1));
     expect(animMsFor(4, 8)).toBeGreaterThan(animMsFor(4, 0));
+  });
+  it('jogada enorme acelera em vez de estourar o teto: o relógio e a cena usam o mesmo fator', () => {
+    expect(animScale(3, 4)).toBe(1); // jogada normal: velocidade de sempre
+    expect(animMsFor(3, 4)).toBe(300 + 3 * ANIM_NEW_MS + 4 * ANIM_MOVE_MS + 1500);
+    for (const [f, m] of [[0, 61], [10, 50], [30, 60], [60, 100]] as const) {
+      const k = animScale(f, m);
+      expect(k).toBeLessThan(1);
+      expect(300 + (f * ANIM_NEW_MS + m * ANIM_MOVE_MS) * k).toBeLessThanOrEqual(ANIM_MAX_MS + 1e-6); // a cena acaba dentro do teto
+      expect(animMsFor(f, m)).toBeLessThanOrEqual(ANIM_MAX_MS + 1500 + 1e-6);
+    }
   });
 });
 

@@ -191,6 +191,17 @@ export class Tile {
     this.bodyMat.emissiveIntensity = intensity;
   }
 
+  /** Termina já a viagem: a pedra aparece no destino (usado quando a animação da jogada alheia passou do tempo). */
+  snap(): void {
+    this.delay = 0;
+    this.group.visible = true;
+    this.group.position.copy(this.target);
+    this.group.rotation.y = this.targetRotY;
+    this.group.scale.setScalar(this.targetScale);
+    this.speed = 16;
+    this.hop = false;
+  }
+
   /** @returns true enquanto ainda está se movendo */
   step(dt: number): boolean {
     const g = this.group;
