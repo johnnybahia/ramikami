@@ -21,6 +21,55 @@ export const setHighContrast = (on: boolean): void => {
 
 const cache = new Map<string, THREE.CanvasTexture>();
 
+// ---------- plástico arranhado nas pedras ----------
+// Pacote PBR Plastic005 (relevo e rugosidade reduzidos para 512 px; os riscos finos extraídos da rugosidade em 1024 px).
+// A pedra continua marfim: nada de cor do pacote (é azul acinzentado e fica marmorizada). O corpo ganha relevo e brilho irregular;
+// a face é um desenho opaco, então os riscos entram "carimbados" (multiplicando) no fundo dela, antes do número.
+let plasticOn = true;
+export const setPlasticTiles = (on: boolean): void => {
+  plasticOn = on;
+};
+export const plasticActive = (): boolean => plasticOn && !highContrast;
+
+interface PlasticSet {
+  normal: THREE.Texture;
+  rough: THREE.Texture;
+}
+let plastic: PlasticSet | null = null;
+let scratchImg: HTMLImageElement | null = null;
+let scratchReady = false;
+const plasticLoaded: (() => void)[] = [];
+/** Avisa quando as imagens terminam de chegar (a cena só redesenha quando algo muda). */
+export const onPlasticLoaded = (cb: () => void): (() => void) => {
+  plasticLoaded.push(cb);
+  return () => {
+    const i = plasticLoaded.indexOf(cb);
+    if (i >= 0) plasticLoaded.splice(i, 1);
+  };
+};
+const PLASTIC_REPEAT = 3;
+
+function plasticSet(aniso: number): PlasticSet {
+  if (plastic) return plastic;
+  const loader = new THREE.TextureLoader();
+  const base = `${import.meta.env.BASE_URL}plastic/`;
+  const mk = (file: string): THREE.Texture => {
+    const t = loader.load(base + file, () => plasticLoaded.forEach((f) => f()));
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(PLASTIC_REPEAT, PLASTIC_REPEAT);
+    t.anisotropy = aniso;
+    return t;
+  };
+  plastic = { normal: mk('normal.jpg'), rough: mk('rough.jpg') };
+  scratchImg = new Image();
+  scratchImg.onload = () => {
+    scratchReady = true;
+    plasticLoaded.forEach((f) => f());
+  };
+  scratchImg.src = `${base}scratch.jpg`;
+  return plastic;
+}
+
 function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   c.beginPath();
   c.moveTo(x + r, y);
@@ -86,7 +135,8 @@ function drawShape(c: CanvasRenderingContext2D, kind: number, cx: number, cy: nu
 
 /** Textura da face (número colorido + anel, ou coringa), desenhada por código. */
 export function faceTexture(id: number, maxAniso = 4): THREE.CanvasTexture {
-  const key = `${highContrast ? 'h' : 'n'}${isJoker(id) ? -1 : tileColor(id) * 13 + tileNum(id)}`;
+  const scratched = plasticActive() && scratchReady;
+  const key = `${highContrast ? 'h' : scratched ? 's' : 'n'}${isJoker(id) ? -1 : tileColor(id) * 13 + tileNum(id)}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const w = 256;
@@ -100,6 +150,17 @@ export function faceTexture(id: number, maxAniso = 4): THREE.CanvasTexture {
   bg.addColorStop(1, '#efe4c8');
   c.fillStyle = bg;
   c.fillRect(0, 0, w, h);
+  if (scratched && scratchImg) {
+    // um pedaço diferente do pacote em cada pedra (pelo número/cor), multiplicando o marfim: os riscos escurecem
+    const k = isJoker(id) ? 53 : tileColor(id) * 13 + tileNum(id);
+    const sw = 384;
+    const sh = Math.round((sw * h) / w);
+    const sx = (k * 137) % (scratchImg.naturalWidth - sw);
+    const sy = (k * 89) % (scratchImg.naturalHeight - sh);
+    c.globalCompositeOperation = 'multiply';
+    c.drawImage(scratchImg, sx, sy, sw, sh, 0, 0, w, h);
+    c.globalCompositeOperation = 'source-over';
+  }
   // borda gravada
   c.lineWidth = 3;
   c.strokeStyle = 'rgba(120,95,50,0.28)';
@@ -178,11 +239,37 @@ export class Tile {
     this.face.position.y = TILE_H + 0.003;
     this.group.add(this.body, this.face);
     this.group.visible = false;
+    this.applyPlastic(aniso);
+  }
+
+  /** Liga ou desliga o plástico arranhado (corpo e face) conforme a opção e o alto contraste. */
+  applyPlastic(aniso: number): void {
+    const body = this.bodyMat;
+    const face = this.face.material as THREE.MeshStandardMaterial;
+    if (plasticActive()) {
+      const p = plasticSet(aniso);
+      body.normalMap = p.normal;
+      body.normalScale.set(0.35, 0.35);
+      body.roughnessMap = p.rough;
+      body.roughness = 1.5; // o mapa tem média ~0,24: ×1,5 deixa o brilho parecido com o de antes, com os arranhões foscos
+      face.normalMap = p.normal;
+      face.normalScale.set(0.25, 0.25);
+      face.roughnessMap = p.rough;
+      face.roughness = 1.6;
+    } else {
+      body.normalMap = body.roughnessMap = null;
+      body.roughness = 0.42;
+      face.normalMap = face.roughnessMap = null;
+      face.roughness = 0.5;
+    }
+    body.needsUpdate = true;
+    face.needsUpdate = true;
   }
 
   refreshFace(aniso: number): void {
     const mat = this.face.material as THREE.MeshStandardMaterial;
     mat.map = faceTexture(this.id, aniso);
+    this.applyPlastic(aniso);
     mat.needsUpdate = true;
   }
 

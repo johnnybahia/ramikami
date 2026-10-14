@@ -1,0 +1,2 @@
+Imagens derivadas do pacote Plastic005_2K-JPG (relevo e rugosidade em 512 px; riscos finos extraidos da rugosidade em 1024 px).
+O pacote foi fornecido pelo dono do projeto e tem o formato do ambientCG (em geral CC0): confirme a licenca de origem antes de redistribuir.

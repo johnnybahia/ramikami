@@ -329,6 +329,12 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
   const nologCb = h('input', { attrs: { type: 'checkbox' } });
   nologCb.checked = loadNoLog();
   nologCb.addEventListener('change', () => saveNoLog(nologCb.checked));
+  const plasticCb = h('input', { attrs: { type: 'checkbox' } });
+  plasticCb.checked = cur.plastic;
+  plasticCb.addEventListener('change', () => {
+    saveA11y({ ...loadA11y(), plastic: plasticCb.checked });
+    onChange?.(loadA11y());
+  });
   const bigCb = h('input', { attrs: { type: 'checkbox' } });
   bigCb.checked = cur.bigTiles;
   bigCb.addEventListener('change', () => {
@@ -398,6 +404,7 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
       { class: 'panel' },
       h('h2', { text: 'Visual' }),
       h('label', { class: 'check' }, cb, h('span', { text: 'Alto contraste: pedras brancas, cores bem distintas e um símbolo para cada cor (● ▲ ■ ◆)' })),
+      h('label', { class: 'check' }, plasticCb, h('span', { text: 'Pedras de plástico arranhado (brilho e relevo; desligue se o jogo ficar pesado no seu aparelho)' })),
       h('label', { class: 'check' }, bigCb, h('span', { text: 'Pedras grandes na mesa: não afasta tudo para caber; você rola a mesa com o dedo' })),
       h('label', { class: 'check' }, rackCb, h('span', { text: 'Recolher o cavalete quando não é a minha vez (toque na faixa para abrir)' })),
       h('label', { class: 'check' }, nologCb, h('span', { text: 'Não guardar minhas partidas online (o registro anônimo ajuda a melhorar os bots; vale a partir da próxima sala)' })),
