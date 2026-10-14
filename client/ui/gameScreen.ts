@@ -29,7 +29,8 @@ import { relayout, type SetState } from '../../shared/layout';
 import { animCounts } from '../../shared/layout';
 import { BEST_OF_OPTIONS, BOT_TURN_SECONDS, animMsFor, TURN_SECONDS_OPTIONS, turnLabel, type BestOf, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
 import { applyUpdate, checkForUpdate, onPwa, type PwaState } from '../pwa';
-import { avatarColor, loadA11y, saveA11y, type Profile } from '../store';
+import { avatarColor, loadA11y, loadProgress, saveA11y, saveProgress, type Profile } from '../store';
+import { GM_UNLOCK_WINS, addWin, gmStatusText, isGmUnlocked, winKind } from '../../shared/progress';
 import { avatarEl, btn, clear, h, toast } from './dom';
 
 interface PBox {
@@ -289,6 +290,7 @@ export class GameScreen {
       window.clearTimeout(this.busyTimer);
       this.busyTimer = window.setTimeout(() => this.afterBusy(), ms + 60);
     }
+    if (prev && prev.phase === 'playing' && v.phase === 'ended') this.countProgress(v);
     if (prev && prev.phase === 'playing' && (v.turnNo > prev.turnNo || v.phase === 'ended')) this.botChatter(prev, v);
     const sig = `${v.phase}|${v.turnNo}|${JSON.stringify(v.table)}|${v.rack.slice().sort((a, b) => a - b).join(',')}`;
     if (sig !== this.sig) {
@@ -316,6 +318,24 @@ export class GameScreen {
     if (this.rtc) this.rtc.setPeers(ids);
     else this.pendingPeers = ids;
     this.render();
+  }
+
+  /** Fim de partida: vitória contra bots Mestre/Grão-mestre conta para liberar o Grão-mestre (salvo neste aparelho). */
+  private countProgress(v: RoomView): void {
+    if (!v.result) return;
+    const kind = winKind({
+      you: v.you,
+      winners: v.result.winners,
+      reason: v.result.reason,
+      players: v.players.map((p) => ({ id: p.id, bot: p.bot, left: p.left, level: p.bot ? (p.botLevel ?? personaOfBotId(p.id)?.level) : undefined })),
+    });
+    if (!kind) return;
+    const before = loadProgress();
+    const after = addWin(before, kind);
+    saveProgress(after);
+    if (kind === 'grandmaster') return; // vitória contra Grão-mestre fica registrada, mas não conta para liberar
+    if (!isGmUnlocked(before) && isGmUnlocked(after)) toast('🔓 Grão-mestre liberado! Escolha-o em "Nível dos bots".', 6000);
+    else if (!isGmUnlocked(after)) toast(`Vitória contra o Mestre: ${after.masterWins}/${GM_UNLOCK_WINS} para liberar o Grão-mestre.`, 4500);
   }
 
   /** Um bot comenta a jogada que acabou de acontecer (só visual, aparece depois da animação). */
@@ -869,6 +889,7 @@ export class GameScreen {
     const curLevel: BotLevel = bots[0]?.botLevel ?? this.botLevel;
     this.botLevel = curLevel;
     const maxBots = Math.min(MAX_BOTS, 4 - humans);
+    const gmOpen = isGmUnlocked(loadProgress());
     const botRow = host
       ? h(
           'div',
@@ -876,11 +897,12 @@ export class GameScreen {
           h('label', { class: 'lbl', text: 'Bots na mesa' }),
           this.segment([0, 1, 2, 3].map((n) => ({ value: n, label: String(n), disabled: n > maxBots })), bots.length, (n) => this.b.setBots(n, this.botLevel)),
           h('label', { class: 'lbl', text: 'Nível dos bots' }),
-          this.segment(BOT_LEVELS.map((l) => ({ value: l, label: LEVEL_CFG[l].label })), curLevel, (l) => {
+          this.segment(BOT_LEVELS.map((l) => ({ value: l, label: l === 'grandmaster' && !gmOpen ? `🔒 ${LEVEL_CFG[l].label}` : LEVEL_CFG[l].label, disabled: l === 'grandmaster' && !gmOpen && curLevel !== 'grandmaster' })), curLevel, (l) => {
             this.botLevel = l;
             this.b.setBots(bots.length, l);
           }),
           h('p', { class: 'hint', text: LEVEL_CFG[curLevel].blurb }),
+          h('p', { class: 'hint gm-hint', text: gmStatusText(loadProgress()) }),
         )
       : null;
     const seg = h('div', { class: 'seg' });

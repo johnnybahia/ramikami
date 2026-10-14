@@ -1,6 +1,6 @@
 // Confronto candidato x Mestre atual: npx tsx scripts/sim-vs.ts <modulo-do-candidato|baseline> [partidas=200] [jogadores=2]
 // O módulo do candidato exporta: botMove(state, persona, rng) => SetState[] | null  (mesma assinatura de shared/bot.ts)
-// "baseline" = Mestre contra Mestre (controle: deve dar ~50%).
+// "baseline" = espelho do adversário (controle: deve dar ~50%). Variáveis: SEED=<n>, OPP=grandmaster.
 import { resolve } from 'node:path';
 import { createGame, playTurn, drawTurn, currentPlayer, type GameState } from '../shared/game';
 import { botMove as masterMove, LEVEL_CFG } from '../shared/bot';
@@ -13,7 +13,10 @@ const PLAYERS = Number(process.argv[4] ?? 2);
 const MAX_TURNS = 700;
 const SEED0 = Number(process.env.SEED ?? 5000); // outra semente para confirmar resultados
 
+// OPP=grandmaster: o adversário é o Grão-mestre atual (padrão: Mestre). "baseline" = espelho do adversário (controle ~50%).
+const OPP_CFG = process.env.OPP === 'grandmaster' ? LEVEL_CFG.grandmaster : LEVEL_CFG.master;
 const cand: MoveFn = arg === 'baseline' ? masterMove : ((await import(resolve(arg))) as { botMove: MoveFn }).botMove;
+const CAND_CFG = arg === 'baseline' ? OPP_CFG : LEVEL_CFG.master;
 
 const stat = { invalid: 0, moves: 0, plays: 0, draws: 0, ms: 0, maxMove: 0, drawsWithPlay: 0 };
 function play(candSeat: number, seed: number) {
@@ -24,7 +27,7 @@ function play(candSeat: number, seed: number) {
     const cur = currentPlayer(g);
     const mine = Number(cur.id.slice(1)) === candSeat;
     const t0 = performance.now();
-    const t = (mine ? cand : masterMove)(g, LEVEL_CFG.master, rng);
+    const t = (mine ? cand : masterMove)(g, mine ? CAND_CFG : OPP_CFG, rng);
     const dt = performance.now() - t0;
     let step = t ? playTurn(g, cur.id, t) : null;
     if (mine) {

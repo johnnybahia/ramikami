@@ -6,6 +6,7 @@ import { solveTable } from './solver';
 import { mulberry32, handPoints } from './tiles';
 import { COLS, animCounts, findCompactSpot, packRows, relayout, type SetState } from './layout';
 import { animMsFor } from './protocol';
+import { GM_UNLOCK_WINS, addWin, gmStatusText, isGmUnlocked, winKind, winsToUnlock, type Progress } from './progress';
 
 // id = cor*26 + (num-1) (+13 para a segunda cópia). cor 0 preto, 1 azul, 2 vermelho, 3 laranja
 const T = (color: number, num: number, copy = 0) => color * 13 + (num - 1) + copy * 52;
@@ -394,5 +395,34 @@ describe('animação da jogada', () => {
     expect(animMsFor(0, 0)).toBe(0);
     expect(animMsFor(0, 6)).toBeGreaterThan(animMsFor(0, 1));
     expect(animMsFor(4, 8)).toBeGreaterThan(animMsFor(4, 0));
+  });
+});
+
+describe('progresso do Grão-mestre', () => {
+  const pl = (...levels: (string | null)[]) => levels.map((l, i) => ({ id: l ? `bot${i}` : 'eu', bot: !!l, left: false, level: l ?? undefined }));
+  const facts = (players: ReturnType<typeof pl>, winners: string[], reason = 'empty') => ({ you: 'eu', winners, reason, players });
+  it('só conta vitória do jogador contra bots de um mesmo nível Mestre ou Grão-mestre, com fim normal', () => {
+    expect(winKind(facts(pl(null, 'master'), ['eu']))).toBe('master');
+    expect(winKind(facts(pl(null, 'master', 'master'), ['eu']))).toBe('master');
+    expect(winKind(facts(pl(null, 'master', 'grandmaster'), ['eu']))).toBeNull(); // níveis misturados não contam
+    expect(winKind(facts(pl(null, 'grandmaster', 'grandmaster'), ['eu']))).toBe('grandmaster');
+    expect(winKind(facts(pl(null, 'master'), ['bot1']))).toBeNull(); // perdeu
+    expect(winKind(facts(pl(null, 'hard'), ['eu']))).toBeNull(); // bot fraco
+    expect(winKind(facts(pl(null, 'master', 'easy'), ['eu']))).toBeNull(); // um bot fraco na mesa invalida
+    expect(winKind(facts(pl(null, 'master'), ['eu'], 'left'))).toBeNull(); // adversário saiu
+    expect(winKind(facts(pl(null, null), ['eu']))).toBeNull(); // sem bots
+  });
+  it('libera o Grão-mestre na 10ª vitória e explica o que falta', () => {
+    let p: Progress = { masterWins: 0, gmWins: 0 };
+    for (let i = 0; i < GM_UNLOCK_WINS - 1; i++) p = addWin(p, 'master');
+    expect(isGmUnlocked(p)).toBe(false);
+    expect(winsToUnlock(p)).toBe(1);
+    expect(gmStatusText(p)).toContain(`${GM_UNLOCK_WINS - 1}/${GM_UNLOCK_WINS}`);
+    p = addWin(p, 'grandmaster'); // vitória contra Grão-mestre não conta para liberar
+    expect(isGmUnlocked(p)).toBe(false);
+    expect(p.gmWins).toBe(1);
+    p = addWin(p, 'master');
+    expect(isGmUnlocked(p)).toBe(true);
+    expect(gmStatusText(p)).toContain('liberado');
   });
 });
