@@ -1,4 +1,4 @@
-import { ANIM_MOVE_MS, ANIM_NEW_MS } from '../../shared/protocol';
+import { ANIM_MOVE_MS, ANIM_NEW_MS, animScale } from '../../shared/protocol';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { COLS, ROWS, type SetState } from '../../shared/layout';
@@ -79,6 +79,8 @@ export class TableScene {
   private aniso = 4;
   private sizeF = 1;
   private slowNext = false;
+  /** pedras da última jogada alheia que ainda podem estar a caminho (a animação pausa com a aba escondida e fica lenta em aparelho fraco) */
+  private remoteIds = new Set<number>();
   private felt!: THREE.Mesh;
   private offSkin: () => void = () => {};
   /** conjuntos onde a pedra arrastada encaixa (brilham em verde) */
@@ -459,6 +461,16 @@ export class TableScene {
     this.rackCam.updateProjectionMatrix();
   }
 
+  /** Termina já as viagens da jogada alheia: ao liberar a vez de quem joga, a mesa tem de estar no estado final. */
+  finishRemote(): void {
+    for (const id of this.remoteIds) {
+      const t = this.tiles[id];
+      if (t && t.present && !t.dragging && this.tileScene[id] === 'board') t.snap();
+    }
+    this.remoteIds.clear();
+    this.dirty = true;
+  }
+
   private syncTiles(): void {
     const s = this.state;
     const where = new Map<number, { set: SetState; index: number }>();
@@ -492,6 +504,8 @@ export class TableScene {
       const leaving = new Map<string, number>();
       for (const m of todo) if (m.from) leaving.set(m.from, m.id);
       let at = 0.3;
+      const freshN = todo.reduce((a, m) => a + (m.fresh ? 1 : 0), 0);
+      const scale = animScale(freshN, todo.length - freshN); // jogada enorme: comprime os atrasos (mesma conta do relógio)
       const left = todo.slice();
       while (left.length > 0) {
         let k = left.findIndex((m) => {
@@ -502,8 +516,9 @@ export class TableScene {
         const m = left.splice(k, 1)[0]!;
         if (m.from && leaving.get(m.from) === m.id) leaving.delete(m.from);
         seq.set(m.id, { delay: at, fresh: m.fresh });
-        at += (m.fresh ? ANIM_NEW_MS : ANIM_MOVE_MS) / 1000;
+        at += ((m.fresh ? ANIM_NEW_MS : ANIM_MOVE_MS) / 1000) * scale;
       }
+      for (const id of seq.keys()) this.remoteIds.add(id);
     }
     const dragId = this.it && this.it.type === 'tile' && this.it.active ? this.it.id : -1;
     const setDrag = this.it && this.it.type === 'set' && this.it.active ? this.it : null;

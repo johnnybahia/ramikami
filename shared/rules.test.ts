@@ -6,7 +6,7 @@ import { GM_TUNING } from './grandmaster';
 import { solveTable } from './solver';
 import { mulberry32, handPoints } from './tiles';
 import { COLS, animCounts, findCompactSpot, packRows, relayout, type SetState } from './layout';
-import { animMsFor } from './protocol';
+import { ANIM_MAX_MS, ANIM_MOVE_MS, ANIM_NEW_MS, animMsFor, animScale } from './protocol';
 import { GM_UNLOCK_WINS, addWin, gmStatusText, isGmUnlocked, winKind, winsToUnlock, type Progress } from './progress';
 
 // id = cor*26 + (num-1) (+13 para a segunda cópia). cor 0 preto, 1 azul, 2 vermelho, 3 laranja
@@ -427,6 +427,16 @@ describe('animação da jogada', () => {
     expect(animMsFor(0, 0)).toBe(0);
     expect(animMsFor(0, 6)).toBeGreaterThan(animMsFor(0, 1));
     expect(animMsFor(4, 8)).toBeGreaterThan(animMsFor(4, 0));
+  });
+  it('jogada enorme acelera em vez de estourar o teto: o relógio e a cena usam o mesmo fator', () => {
+    expect(animScale(3, 4)).toBe(1); // jogada normal: velocidade de sempre
+    expect(animMsFor(3, 4)).toBe(300 + 3 * ANIM_NEW_MS + 4 * ANIM_MOVE_MS + 1500);
+    for (const [f, m] of [[0, 61], [10, 50], [30, 60], [60, 100]] as const) {
+      const k = animScale(f, m);
+      expect(k).toBeLessThan(1);
+      expect(300 + (f * ANIM_NEW_MS + m * ANIM_MOVE_MS) * k).toBeLessThanOrEqual(ANIM_MAX_MS + 1e-6); // a cena acaba dentro do teto
+      expect(animMsFor(f, m)).toBeLessThanOrEqual(ANIM_MAX_MS + 1500 + 1e-6);
+    }
   });
 });
 

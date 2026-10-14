@@ -17,7 +17,15 @@ export const ANIM_NEW_MS = 1100;
 export const ANIM_MOVE_MS = 700;
 /** Folga que o servidor soma ao relógio além da animação, para a contagem nunca começar antes da última pedra cair. */
 export const ANIM_SAFETY_MS = 1000;
-export const animMsFor = (fresh: number, moved = 0): number => (fresh + moved <= 0 ? 0 : Math.min(24000, 300 + fresh * ANIM_NEW_MS + moved * ANIM_MOVE_MS) + 1500);
+/** Teto da animação de uma jogada: jogadas enormes (rearranjo da mesa inteira) aceleram em vez de passar disso. */
+export const ANIM_MAX_MS = 20000;
+/** Fator (<=1) que comprime os atrasos entre pedras para a jogada caber em ANIM_MAX_MS; a cena e o relógio usam o mesmo. */
+export const animScale = (fresh: number, moved = 0): number => {
+  const raw = fresh * ANIM_NEW_MS + moved * ANIM_MOVE_MS;
+  return raw <= 0 ? 1 : Math.min(1, (ANIM_MAX_MS - 300) / raw);
+};
+export const animMsFor = (fresh: number, moved = 0): number =>
+  fresh + moved <= 0 ? 0 : 300 + (fresh * ANIM_NEW_MS + moved * ANIM_MOVE_MS) * animScale(fresh, moved) + 1500;
 export const turnLabel = (s: number): string => (s === 0 ? 'Sem limite' : `${s}s`);
 export type TurnSeconds = (typeof TURN_SECONDS_OPTIONS)[number];
 /** Ordem de preferência ao sentar: com 2 jogadores ficam frente a frente. */
