@@ -21,6 +21,7 @@ import {
   type TurnSeconds,
 } from '../../shared/protocol';
 import type { RecordEntry } from './ranking';
+import { GM_TITLE_WINS } from '../../shared/progress';
 import type { Env } from './env';
 
 interface Series {
@@ -49,6 +50,8 @@ interface Stored {
   game: GameState | null;
   turnEndsAt: number | null;
   recorded: boolean;
+  /** jogadores com título de Grão-mestre (atualizado quando entram e quando conquistam) */
+  titles?: Record<string, true>;
 }
 
 const IDLE_ROOM_MS = 10 * 60 * 1000;
@@ -143,6 +146,7 @@ export class GameRoom implements DurableObject {
       left: false,
       bot: !!s.bots[id],
       botLevel: s.bots[id],
+      title: !!s.titles?.[id],
       ...extra,
     });
     const players: RoomPlayer[] =
@@ -499,6 +503,7 @@ export class GameRoom implements DurableObject {
       return void ws.close(4003, 'started');
     }
 
+    await this.refreshTitle(id);
     delete s.away[id];
     const old = this.online().get(id);
     ws.serializeAttachment({ id });
@@ -519,6 +524,44 @@ export class GameRoom implements DurableObject {
     await this.persist();
     this.broadcast();
     await this.listing();
+  }
+
+  /** Consulta o título do jogador no ranking (melhor esforço: sem resposta, vale o que já se sabia). */
+  private async refreshTitle(id: string): Promise<void> {
+    const s = this.s!;
+    try {
+      const r = await this.env.RANKING.get(this.env.RANKING.idFromName('global')).fetch(`https://ranking/title?id=${encodeURIComponent(id)}`);
+      const d = (await r.json()) as { title?: boolean };
+      s.titles ??= {};
+      if (d.title) s.titles[id] = true;
+      else delete s.titles[id];
+    } catch {
+      /* ranking é best-effort */
+    }
+  }
+
+  /** Fim de partida: vitória online contra Grão-mestres conta para o título (todos os bots da mesa têm que ser Grão-mestre). */
+  private async countGrandmasterWins(g: GameState): Promise<void> {
+    const s = this.s!;
+    const res = g.result;
+    if (!res || res.reason === 'left') return;
+    const bots = g.players.filter((p) => p.isBot);
+    if (bots.length === 0 || !bots.every((b) => s.bots[b.id] === 'grandmaster')) return;
+    for (const p of g.players) {
+      if (p.isBot || p.left || !res.winners.includes(p.id)) continue;
+      try {
+        const r = await this.env.RANKING.get(this.env.RANKING.idFromName('global')).fetch('https://ranking/gmwin', { method: 'POST', body: JSON.stringify({ id: p.id }) });
+        const d = (await r.json()) as { wins?: number; title?: boolean };
+        s.titles ??= {};
+        if (d.title && !s.titles[p.id]) {
+          s.titles[p.id] = true;
+          const text = `👑 ${p.name} venceu os Grão-mestres ${GM_TITLE_WINS} vezes e agora é Grão-mestre!`;
+          for (const w of this.online().values()) this.send(w, { t: 'notice', text });
+        }
+      } catch {
+        /* ranking é best-effort */
+      }
+    }
   }
 
   private async onDisconnect(id: string): Promise<void> {
@@ -631,6 +674,7 @@ export class GameRoom implements DurableObject {
     }
     // anti-farm: partidas relâmpago (alguém saiu logo no começo) não entram no ranking
     if (g.turnNo < g.players.length * 3 && g.result.reason !== 'empty') return;
+    await this.countGrandmasterWins(g);
     const entries: RecordEntry[] = g.players.filter((p) => !p.isBot).map((p) => ({ id: p.id, name: p.name, points: g.result!.points[p.id] ?? 0, won: g.result!.winners.includes(p.id) }));
     try {
       await this.env.RANKING.get(this.env.RANKING.idFromName('global')).fetch('https://ranking/record', { method: 'POST', body: JSON.stringify(entries) });

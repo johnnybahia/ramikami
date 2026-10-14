@@ -1,4 +1,5 @@
 import type { RankingRow } from '../../shared/protocol';
+import { GM_TITLE_WINS } from '../../shared/progress';
 
 export interface RecordEntry {
   id: string;
@@ -27,6 +28,7 @@ export class Ranking implements DurableObject {
         id TEXT PRIMARY KEY, name TEXT NOT NULL, games INTEGER NOT NULL, wins INTEGER NOT NULL,
         total INTEGER NOT NULL, best INTEGER NOT NULL, updated INTEGER NOT NULL)`,
     );
+    this.sql.exec('CREATE TABLE IF NOT EXISTS gm (id TEXT PRIMARY KEY, wins INTEGER NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS names (id TEXT PRIMARY KEY, norm TEXT NOT NULL UNIQUE, name TEXT NOT NULL)');
   }
 
@@ -50,6 +52,28 @@ export class Ranking implements DurableObject {
         );
       }
       return new Response('ok');
+    }
+    // título de Grão-mestre: vitórias online contra Grão-mestres, contadas aqui (não dá para forjar pelo aparelho)
+    if (req.method === 'POST' && url.pathname === '/gmwin') {
+      const b = (await req.json()) as { id?: string };
+      const id = String(b.id ?? '').slice(0, 64);
+      if (id.length < 8) return Response.json({ wins: 0, title: false }, { status: 400 });
+      this.sql.exec('INSERT INTO gm (id, wins) VALUES (?, 1) ON CONFLICT(id) DO UPDATE SET wins = wins + 1', id);
+      const wins = this.sql.exec<{ wins: number }>('SELECT wins FROM gm WHERE id = ?', id).toArray()[0]?.wins ?? 0;
+      return Response.json({ wins, title: wins >= GM_TITLE_WINS });
+    }
+    if (req.method === 'POST' && url.pathname === '/gmgrant') {
+      const b = (await req.json()) as { id?: string; wins?: number };
+      const id = String(b.id ?? '').slice(0, 64);
+      const wins = Math.max(0, Math.min(1000, Math.floor(Number(b.wins) || 0)));
+      if (id.length < 8) return Response.json({ ok: false }, { status: 400 });
+      this.sql.exec('INSERT INTO gm (id, wins) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET wins = excluded.wins', id, wins);
+      return Response.json({ wins, title: wins >= GM_TITLE_WINS });
+    }
+    if (req.method === 'GET' && url.pathname === '/title') {
+      const id = String(url.searchParams.get('id') ?? '').slice(0, 64);
+      const wins = id.length >= 8 ? (this.sql.exec<{ wins: number }>('SELECT wins FROM gm WHERE id = ?', id).toArray()[0]?.wins ?? 0) : 0;
+      return Response.json({ wins, title: wins >= GM_TITLE_WINS });
     }
     // reserva de nome: um nome pertence a um id; trocar de nome libera o anterior
     if (req.method === 'POST' && url.pathname === '/claim') {

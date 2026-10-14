@@ -53,6 +53,9 @@ export async function resetRanking(key: string): Promise<boolean> {
   return r.ok;
 }
 
+/** Título de Grão-mestre do jogador (contado pelo servidor). */
+export const getTitle = (id: string): Promise<{ wins: number; title: boolean }> => j(`/api/title?id=${encodeURIComponent(id)}`);
+
 export async function getIceServers(): Promise<RTCIceServer[]> {
   try {
     return (await j<{ iceServers: RTCIceServer[] }>('/api/ice')).iceServers;
