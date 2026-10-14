@@ -29,8 +29,9 @@ import { relayout, type SetState } from '../../shared/layout';
 import { animCounts } from '../../shared/layout';
 import { BEST_OF_OPTIONS, BOT_TURN_SECONDS, animMsFor, TURN_SECONDS_OPTIONS, turnLabel, type BestOf, type RoomPlayer, type RoomView, type TurnSeconds } from '../../shared/protocol';
 import { applyUpdate, checkForUpdate, onPwa, type PwaState } from '../pwa';
-import { avatarColor, loadA11y, loadProgress, saveA11y, saveProgress, type Profile } from '../store';
-import { GM_UNLOCK_WINS, addWin, gmStatusText, isGmUnlocked, winKind } from '../../shared/progress';
+import { avatarColor, hasTitle, loadA11y, loadProgress, loadTitle, saveA11y, saveProgress, saveTitle, type Profile } from '../store';
+import { getTitle } from '../api';
+import { GM_TITLE_WINS, GM_UNLOCK_WINS, addWin, gmStatusText, isGmUnlocked, winKind } from '../../shared/progress';
 import { avatarEl, btn, clear, h, toast } from './dom';
 
 interface PBox {
@@ -290,6 +291,7 @@ export class GameScreen {
       window.clearTimeout(this.busyTimer);
       this.busyTimer = window.setTimeout(() => this.afterBusy(), ms + 60);
     }
+    this.titleEvents(prev, v);
     if (prev && prev.phase === 'playing' && v.phase === 'ended') this.countProgress(v);
     if (prev && prev.phase === 'playing' && (v.turnNo > prev.turnNo || v.phase === 'ended')) this.botChatter(prev, v);
     const sig = `${v.phase}|${v.turnNo}|${JSON.stringify(v.table)}|${v.rack.slice().sort((a, b) => a - b).join(',')}`;
@@ -320,6 +322,39 @@ export class GameScreen {
     this.render();
   }
 
+  /** Depois de uma vitória online contra Grão-mestres, pergunta ao servidor se o título saiu. */
+  private async refreshMyTitle(id: string): Promise<void> {
+    try {
+      const t = await getTitle(id);
+      const was = loadTitle().title;
+      saveTitle({ title: t.title, wins: t.wins });
+      if (t.title && !was) toast('👑 Título de Grão-mestre conquistado! A mesa exclusiva já está em "Visual e mesa".', 7000);
+      else if (!t.title) toast(`Vitória online contra Grão-mestres: ${t.wins}/${GM_TITLE_WINS} para o título.`, 4500);
+    } catch {
+      /* offline */
+    }
+  }
+
+  /** Avisos de Grão-mestre: quem entra na sala com o título e a abertura especial da partida. */
+  private titleEvents(prev: RoomView | null, v: RoomView): void {
+    const titled = v.players.filter((p) => p.title && !p.bot && !p.left);
+    for (const p of titled) {
+      if (p.id === v.you) continue;
+      if (!prev || !prev.players.some((q) => q.id === p.id)) toast(`👑 ${p.name}, Grão-mestre, está na sala. Dê as boas-vindas!`, 5500);
+    }
+    const starting = v.phase === 'playing' && (!prev || prev.phase !== 'playing');
+    if (!starting) return;
+    const mine = this.b.mode === 'offline' ? hasTitle() : titled.some((p) => p.id === v.you);
+    const names = this.b.mode === 'offline' ? (mine ? [this.me()?.name ?? ''] : []) : titled.map((p) => p.name);
+    if (names.length > 0) this.gmIntro(names.filter(Boolean), mine);
+  }
+
+  private gmIntro(names: string[], mine: boolean): void {
+    const el = h('div', { class: 'gm-intro', on: { click: () => el.remove() } }, h('div', { class: 'gm-crown', text: '👑' }), h('div', { class: 'gm-big', text: mine ? 'GRÃO-MESTRE' : 'GRÃO-MESTRE NA MESA' }), h('div', { class: 'gm-sub', text: names.join(' e ') }));
+    this.root.append(el);
+    window.setTimeout(() => el.remove(), 3800);
+  }
+
   /** Fim de partida: vitória contra bots Mestre/Grão-mestre conta para liberar o Grão-mestre (salvo neste aparelho). */
   private countProgress(v: RoomView): void {
     if (!v.result) return;
@@ -329,6 +364,7 @@ export class GameScreen {
       reason: v.result.reason,
       players: v.players.map((p) => ({ id: p.id, bot: p.bot, left: p.left, level: p.bot ? (p.botLevel ?? personaOfBotId(p.id)?.level) : undefined })),
     });
+    if (kind === 'grandmaster' && this.b.mode === 'online') window.setTimeout(() => void this.refreshMyTitle(v.you), 1500);
     if (!kind) return;
     const before = loadProgress();
     const after = addWin(before, kind);
@@ -748,8 +784,8 @@ export class GameScreen {
       seen.add(p.id);
       const box = this.ensureBox(p);
       this.boxLayer.append(box.el);
-      box.el.className = `pbox${this.shownTurnId() === p.id ? ' turn' : ''}${p.connected ? '' : ' offline'}${p.id === meId ? ' me' : ''}`;
-      box.name.textContent = `${p.isHost ? '♛ ' : ''}${p.name}`;
+      box.el.className = `pbox${p.title ? ' gm' : ''}${this.shownTurnId() === p.id ? ' turn' : ''}${p.connected ? '' : ' offline'}${p.id === meId ? ' me' : ''}`;
+      box.name.textContent = `${p.title ? '👑 ' : ''}${p.isHost ? '♛ ' : ''}${p.name}`;
       box.meta.textContent = v.phase === 'lobby' ? (p.connected ? '' : 'offline') : `${p.rackCount}${p.melded ? ' ✓' : ''}`;
       const bp = personaOfBotId(p.id);
       const photo = this.photos.get(p.id) ?? (bp ? personaAvatar(bp) : null);
@@ -880,7 +916,7 @@ export class GameScreen {
     const list = h('ul', { class: 'plist' });
     for (const p of v.players) {
       const bp = p.bot ? personaOfBotId(p.id) : undefined;
-      const li = h('li', { class: p.isHost ? 'is-host' : '' }, ...(bp ? [h('img', { class: 'avatar tiny', attrs: { src: personaAvatar(bp), alt: '' } }), ' '] : []), `${p.isHost ? '♛ ' : ''}${p.bot ? '🤖 ' : ''}${p.name}${p.id === v.you ? ' (você)' : ''}${p.connected ? '' : ' · offline'}`);
+      const li = h('li', { class: `${p.isHost ? 'is-host' : ''}${p.title ? ' gm-title' : ''}`.trim() }, ...(bp ? [h('img', { class: 'avatar tiny', attrs: { src: personaAvatar(bp), alt: '' } }), ' '] : []), `${p.title ? '👑 ' : ''}${p.isHost ? '♛ ' : ''}${p.bot ? '🤖 ' : ''}${p.name}${p.id === v.you ? ' (você)' : ''}${p.connected ? '' : ' · offline'}`);
       list.append(li);
     }
     // bots: um só nível para todos; o número e o nível valem para a sala toda (só o anfitrião muda)

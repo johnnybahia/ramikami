@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type SkinId = 'verde' | 'bahia' | 'vitoria' | 'corinthians' | 'palmeiras' | 'natal' | 'anonovo';
+export type SkinId = 'verde' | 'bahia' | 'vitoria' | 'corinthians' | 'palmeiras' | 'natal' | 'anonovo' | 'gramestre';
 
 export interface Skin {
   id: SkinId;
@@ -21,6 +21,8 @@ export const SKINS: readonly Skin[] = [
   { id: 'palmeiras', name: 'Palmeiras', swatch: ['#0b4a2a', '#f2f2f2'], bg: '#04170d' },
   { id: 'natal', name: 'Natal', swatch: ['#14452e', '#b3202a'], bg: '#0a1f15' },
   { id: 'anonovo', name: 'Ano Novo', swatch: ['#0e1a3a', '#d9b45a'], bg: '#060b1c' },
+  /** exclusiva de quem tem o título de Grão-mestre */
+  { id: 'gramestre', name: 'Grão-mestre', swatch: ['#0b0b0e', '#f0c24a'], bg: '#040405' },
 ];
 
 export const SKIN_IDS: readonly SkinId[] = SKINS.map((s) => s.id);
@@ -96,6 +98,16 @@ const LOOKS: Record<Exclude<SkinId, 'verde'>, Look> = {
     glow: 'rgba(217,180,90,0.10)',
     sparkles: { color: '#d9b45a', count: 70 },
   },
+  gramestre: {
+    base: '#0b0b0e',
+    lines: [
+      { color: '#f0c24a', width: 8, inset: 24 },
+      { color: '#f0c24a', width: 2.5, inset: 44 },
+      { color: '#8a6a1c', width: 2, inset: 54 },
+    ],
+    glow: 'rgba(240,194,74,0.16)',
+    sparkles: { color: '#f0c24a', count: 90 },
+  },
 };
 
 function felt(c: CanvasRenderingContext2D, base: string, noise = 1): void {
@@ -116,6 +128,27 @@ function sparkle(c: CanvasRenderingContext2D, x: number, y: number, r: number): 
   c.quadraticCurveTo(x, y, x - r, y);
   c.quadraticCurveTo(x, y, x, y - r);
   c.fill();
+}
+
+/** Coroa dourada discreta no centro do pano (mesa do Grão-mestre). */
+function emblemCrown(c: CanvasRenderingContext2D): void {
+  const cx = W / 2;
+  const cy = H / 2;
+  c.save();
+  c.globalAlpha = 0.16;
+  c.fillStyle = '#f0c24a';
+  c.beginPath();
+  c.moveTo(cx - 150, cy + 70);
+  c.lineTo(cx - 170, cy - 70);
+  c.lineTo(cx - 80, cy - 10);
+  c.lineTo(cx, cy - 110);
+  c.lineTo(cx + 80, cy - 10);
+  c.lineTo(cx + 170, cy - 70);
+  c.lineTo(cx + 150, cy + 70);
+  c.closePath();
+  c.fill();
+  c.fillRect(cx - 150, cy + 85, 300, 26);
+  c.restore();
 }
 
 /** Árvore de Natal discreta no centro do pano. */
@@ -210,6 +243,7 @@ function drawSkin(id: SkinId): HTMLCanvasElement {
   }
   if (id === 'natal') emblemTree(c);
   if (id === 'anonovo') emblemYear(c);
+  if (id === 'gramestre') emblemCrown(c);
   for (const l of look.lines) {
     c.strokeStyle = l.color;
     c.lineWidth = l.width;

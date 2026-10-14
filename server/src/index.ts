@@ -64,6 +64,20 @@ export default {
       return json(await r.json());
     }
 
+    if (url.pathname === '/api/title' && req.method === 'GET') {
+      const id = url.searchParams.get('id') ?? '';
+      const r = await env.RANKING.get(env.RANKING.idFromName('global')).fetch(`https://ranking/title?id=${encodeURIComponent(id)}`);
+      return json(await r.json());
+    }
+
+    // dar (ou tirar) o título de um jogador: curl -X POST -H "X-Admin-Key: <senha>" -d '{"id":"<id do perfil>","wins":10}' https://SEU-SITE/api/title/grant
+    if (url.pathname === '/api/title/grant' && req.method === 'POST') {
+      const key = req.headers.get('X-Admin-Key') ?? '';
+      if (!env.ADMIN_KEY || key.length !== env.ADMIN_KEY.length || key !== env.ADMIN_KEY) return json({ error: 'não autorizado' }, 401);
+      const r = await env.RANKING.get(env.RANKING.idFromName('global')).fetch('https://ranking/gmgrant', { method: 'POST', body: await req.text() });
+      return json(await r.json(), r.status);
+    }
+
     if (url.pathname === '/api/name/claim' && req.method === 'POST') {
       const r = await env.RANKING.get(env.RANKING.idFromName('global')).fetch('https://ranking/claim', { method: 'POST', body: await req.text() });
       return json(await r.json(), r.status);

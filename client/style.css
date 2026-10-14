@@ -361,3 +361,15 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 
 .gm-hint { color: var(--gold); font-weight: 600; }
 .rules-sub { margin: 14px 0 4px; color: var(--gold); font-size: 1rem; }
+
+/* Grão-mestre: coroa, moldura dourada e abertura especial */
+.pbox.gm .frame { border-color: #f0c24a; box-shadow: 0 0 0 2px rgba(240, 194, 74, 0.5), 0 0 16px rgba(240, 194, 74, 0.55); }
+.pbox.gm .pname { color: #ffe08a; }
+.plist li.gm-title { color: #ffe08a; font-weight: 800; }
+.gm-intro { position: fixed; inset: 0; z-index: 70; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; color: #ffe08a; background: radial-gradient(circle at 50% 45%, rgba(240, 194, 74, 0.38), rgba(0, 0, 0, 0.9) 70%); animation: gm-in 3.8s ease-out forwards; cursor: pointer; }
+.gm-intro .gm-crown { font-size: 5.5rem; animation: gm-pop 1.1s ease-out; }
+.gm-intro .gm-big { font-size: 2rem; font-weight: 900; letter-spacing: 0.18em; text-shadow: 0 0 22px rgba(240, 194, 74, 0.9); }
+.gm-intro .gm-sub { font-size: 1.3rem; font-weight: 700; color: #fff; }
+@keyframes gm-in { 0% { opacity: 0; } 12% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes gm-pop { 0% { transform: scale(0.3) translateY(-30px); opacity: 0; } 60% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .gm-intro, .gm-intro .gm-crown { animation: none; } }

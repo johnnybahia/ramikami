@@ -103,7 +103,7 @@ export function loadA11y(): A11y {
   a11y = { contrast: false, size: 0, skin: 'verde', chat: true, bigTiles: false, rackAuto: false };
   try {
     const p = JSON.parse(localStorage.getItem(A11Y_KEY) ?? 'null') as Partial<A11y> | null;
-    if (p) a11y = { contrast: p.contrast === true, size: p.size === 1 || p.size === 2 ? p.size : 0, skin: SKIN_IDS.includes(p.skin as SkinId) ? (p.skin as SkinId) : 'verde', chat: p.chat !== false, bigTiles: p.bigTiles === true, rackAuto: p.rackAuto === true };
+    if (p) a11y = { contrast: p.contrast === true, size: p.size === 1 || p.size === 2 ? p.size : 0, skin: SKIN_IDS.includes(p.skin as SkinId) && (p.skin !== 'gramestre' || hasTitle()) ? (p.skin as SkinId) : 'verde', chat: p.chat !== false, bigTiles: p.bigTiles === true, rackAuto: p.rackAuto === true };
   } catch {
     /* sem armazenamento: usa o padrão */
   }
@@ -144,3 +144,26 @@ export function saveProgress(p: Progress): void {
     /* sem armazenamento: vale só nesta sessão */
   }
 }
+
+// ---------- título de Grão-mestre (o servidor conta; aqui fica só uma cópia para a interface) ----------
+const TITLE_KEY = 'ramikami_title_v1';
+export interface TitleInfo {
+  title: boolean;
+  wins: number;
+}
+export function loadTitle(): TitleInfo {
+  try {
+    const t = JSON.parse(localStorage.getItem(TITLE_KEY) ?? '{}') as Partial<TitleInfo>;
+    return { title: t.title === true, wins: typeof t.wins === 'number' && t.wins >= 0 ? Math.floor(t.wins) : 0 };
+  } catch {
+    return { title: false, wins: 0 };
+  }
+}
+export function saveTitle(t: TitleInfo): void {
+  try {
+    localStorage.setItem(TITLE_KEY, JSON.stringify(t));
+  } catch {
+    /* sem armazenamento */
+  }
+}
+export const hasTitle = (): boolean => loadTitle().title;

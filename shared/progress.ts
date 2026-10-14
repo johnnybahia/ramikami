@@ -1,5 +1,7 @@
 // Progresso para liberar o Grão-mestre: vitórias contra bots de nível Mestre. Lógica pura, testada em rules.test.ts.
 export const GM_UNLOCK_WINS = 10;
+/** Vitórias contra Grão-mestres, em sala online (contadas pelo servidor), para ganhar o título. */
+export const GM_TITLE_WINS = 10;
 
 export interface Progress {
   /** vitórias contra bots Mestre (só elas desbloqueiam o Grão-mestre) */
@@ -51,4 +53,5 @@ export const GM_HOW_TO: readonly string[] = [
   'Níveis dos bots: Fácil, Médio, Difícil, Mestre e Grão-mestre (Yoda, Sun Tzu, Marie Curie, Einstein e Kame), o mais forte: guarda o coringa para a hora certa e procura sempre fechar a partida.',
   `Como liberar o Grão-mestre: vença ${GM_UNLOCK_WINS} partidas contra bots de nível Mestre. Vale jogo offline ou sala online, desde que todos os bots da mesa sejam Mestre; sair da partida no meio não conta.`,
   'O progresso (vitórias já contadas) fica salvo neste aparelho. Ao completar, o Grão-mestre aparece liberado em "Nível dos bots".',
+  `Título de Grão-mestre: vença ${GM_TITLE_WINS} partidas contra bots Grão-mestre (todos os bots da mesa) em uma SALA ONLINE; o servidor conta e ninguém consegue forjar. Quem conquista ganha uma coroa 👑 ao lado do nome nas salas online, um aviso para os outros jogadores quando entra na sala, uma abertura de partida especial e a mesa exclusiva "Grão-mestre" em "Visual e mesa". Vitórias offline contra Grão-mestres não contam para o título.`,
 ];

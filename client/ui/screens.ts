@@ -1,8 +1,8 @@
 import { claimName, createRoom, getMasterKey, getRanking, listRooms, resetRanking, setMasterKey } from '../api';
 import { getPwa, installApp, applyUpdate, isIos, onPwa } from '../pwa';
-import { avatarColor, loadA11y, saveA11y, type A11y, loadOfflineSettings, loadProgress, newId, photoFromFile, saveOfflineSettings, saveProfile, type OfflineSettings, type Profile } from '../store';
+import { avatarColor, loadA11y, saveA11y, type A11y, loadOfflineSettings, loadProgress, loadTitle, newId, photoFromFile, saveOfflineSettings, saveProfile, type OfflineSettings, type Profile } from '../store';
 import { BOT_LEVELS, LEVEL_CFG } from '../../shared/bot';
-import { GM_HOW_TO, gmStatusText, isGmUnlocked } from '../../shared/progress';
+import { GM_HOW_TO, GM_TITLE_WINS, gmStatusText, isGmUnlocked } from '../../shared/progress';
 import { LOGO_SKINS, SKINS, clearUserLogo, getUserLogo, setUserLogo } from '../game/skins';
 import { NAME_MAX, TURN_SECONDS_OPTIONS, turnLabel, type TurnSeconds } from '../../shared/protocol';
 import { avatarEl, btn, clear, h, toast } from './dom';
@@ -138,7 +138,7 @@ export function showMenu(root: HTMLElement, a: MenuActions): () => void {
   });
 
   const avatar = avatarEl(a.profile.name, avatarColor(a.profile.id), a.profile.photo, 'avatar');
-  const who = h('button', { class: 'who', attrs: { type: 'button', title: 'Editar perfil' }, on: { click: () => showProfile(root, a.profile, a.onProfile, () => { off(); showMenu(root, a); }) } }, avatar, h('span', { text: a.profile.name }));
+  const who = h('button', { class: 'who', attrs: { type: 'button', title: 'Editar perfil' }, on: { click: () => showProfile(root, a.profile, a.onProfile, () => { off(); showMenu(root, a); }) } }, avatar, h('span', { text: `${loadTitle().title ? '👑 ' : ''}${a.profile.name}` }));
 
   const tiles = h('div', { class: 'logo-tiles' });
   'RAMI'.split('').forEach((ch, i) => tiles.append(h('span', { class: `lt c${i}`, text: ch })));
@@ -309,7 +309,7 @@ function rulesPanel(): void {
         li('Mover (✋): arraste a própria pedra da mesa ou do cavalete. Selecionar (☑): marque pedras do cavalete para jogar juntas, ou um trecho de um conjunto da mesa (segure para marcar o conjunto todo) e arraste. Duas mãos / roda do mouse fazem zoom; arraste a mesa vazia para mover a câmera.'),
       ),
       h('h4', { class: 'rules-sub', text: 'Níveis dos bots e o Grão-mestre' }),
-      h('ul', null, ...GM_HOW_TO.map((t) => li(t)), li(gmStatusText(loadProgress()))),
+      h('ul', null, ...GM_HOW_TO.map((t) => li(t)), li(gmStatusText(loadProgress())), li(loadTitle().title ? '👑 Você é Grão-mestre.' : `Seu título: ${loadTitle().wins}/${GM_TITLE_WINS} vitórias online contra Grão-mestres.`)),
       btn('Entendi', () => m.close(), 'primary'),
     ),
   );
@@ -363,7 +363,7 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
   drawLogoRow();
   const drawSkins = (): void => {
     clear(skinPicker);
-    for (const k of SKINS) {
+    for (const k of SKINS.filter((x) => x.id !== 'gramestre' || loadTitle().title)) {
       const on = loadA11y().skin === k.id;
       skinPicker.append(
         h(
@@ -402,6 +402,7 @@ export function a11yPanel(onChange?: (a: A11y) => void): void {
       }),
       h('label', { class: 'lbl', text: 'Mesa' }),
       skinPicker,
+      ...(loadTitle().title ? [] : [h('p', { class: 'hint gm-hint', text: '🔒 Mesa exclusiva "Grão-mestre": conquiste o título vencendo Grão-mestres em sala online (veja Como jogar).' })]),
       logoRow,
       h('p', { class: 'hint', text: 'Na mesa: arraste o pano vazio para rolar, pince ou use ＋ − para aproximar, toque duas vezes num conjunto para ampliá-lo. Para mover uma pedra da mesa, arraste a própria pedra; para rolar a mesa, arraste no pano vazio.' }),
       h('div', { class: 'row' }, btn('Pronto', () => m.close(), 'primary')),

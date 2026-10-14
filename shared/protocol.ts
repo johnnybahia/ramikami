@@ -66,6 +66,8 @@ export interface RoomPlayer {
   bot: boolean;
   /** só para bots: nível */
   botLevel?: BotLevel;
+  /** jogador com o título de Grão-mestre (vitórias contra Grão-mestres contadas pelo servidor) */
+  title?: boolean;
 }
 
 export interface RoomView {
