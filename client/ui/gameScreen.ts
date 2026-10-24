@@ -564,9 +564,8 @@ export class GameScreen {
   private requestDraw(): void {
     const v = this.view;
     if (!v || !this.canPlay()) return toast(this.myTurn() ? 'Aguarde a jogada terminar de aparecer.' : 'Aguarde a sua vez.');
-    if (v.poolCount === 0) {
-      if (!window.confirm('O pote está vazio. Passar a vez?')) return;
-    } else if (this.draft && isDirty(this.draft) && !window.confirm('Desfazer o que você montou e comprar uma pedra?')) return;
+    if (this.draft && isDirty(this.draft)) return toast('Você está mexendo na mesa: confirme ou desfaça a jogada antes de comprar.');
+    if (v.poolCount === 0 && !window.confirm('O pote está vazio. Passar a vez?')) return;
     this.b.draw();
   }
 
@@ -873,7 +872,7 @@ export class GameScreen {
     this.actionbar.classList.toggle('hidden', v.phase !== 'playing');
     for (const [m, b] of this.modeBtns) b.classList.toggle('active', m === this.mode);
     this.btnUndo.disabled = !mine || this.undo.length === 0;
-    this.btnDraw.disabled = !mine;
+    this.btnDraw.disabled = !mine || isDirty(d);
     this.btnPlaySel.classList.toggle('hidden', !mine || this.mode !== 'pick' || this.selected.size < 3 || !!this.selectedStretch());
     this.btnPlaySel.textContent = `Jogar marcadas (${this.selected.size})`;
     this.btnDraw.textContent = v.poolCount === 0 ? 'Passar' : `Comprar (${v.poolCount})`;

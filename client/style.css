@@ -373,3 +373,10 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 @keyframes gm-in { 0% { opacity: 0; } 12% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes gm-pop { 0% { transform: scale(0.3) translateY(-30px); opacity: 0; } 60% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { .gm-intro, .gm-intro .gm-crown { animation: none; } }
+
+/* ---- Confirmar em destaque; Comprar secundário (bloqueado durante a jogada) ---- */
+.mainrow { display: flex; gap: 12px; align-items: stretch; }
+.mainrow .btn.draw { flex: 1; background: transparent; font-size: 0.84rem; min-height: 38px; align-self: center; }
+.mainrow .btn.draw:disabled { opacity: 0.35; }
+.mainrow .btn.confirm { flex: 2.2; min-height: 50px; font-size: 1.05rem; font-weight: 800; padding: 6px 14px; }
+.mainrow .btn.confirm:not(.dim):not(:disabled):not(.hidden) { box-shadow: 0 0 0 3px rgba(98, 214, 143, 0.28), 0 6px 18px rgba(47, 156, 92, 0.45); }
