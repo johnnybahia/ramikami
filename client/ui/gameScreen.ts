@@ -81,6 +81,7 @@ export class GameScreen {
   private alarm = h('div', { class: 'time-alarm' });
   private busyUntil = 0;
   private busyTimer = 0;
+  private resultTimer = 0;
   private selected = new Set<number>();
   private botLevel: BotLevel = 'normal';
   private btnPlaySel!: HTMLButtonElement;
@@ -288,7 +289,7 @@ export class GameScreen {
     const prev = this.view;
     this.view = v;
     this.receivedAt = performance.now();
-    if (prev && prev.phase === 'playing' && prev.turnId && prev.turnId !== v.you && v.turnNo > prev.turnNo && JSON.stringify(v.table) !== JSON.stringify(prev.table)) {
+    if (prev && prev.phase === 'playing' && prev.turnId && prev.turnId !== v.you && (v.turnNo > prev.turnNo || v.phase === 'ended') && JSON.stringify(v.table) !== JSON.stringify(prev.table)) {
       this.slowFlag = true;
       const ac = animCounts(prev.table, v.table);
       const ms = animMsFor(ac.fresh, ac.moved);
@@ -904,6 +905,13 @@ export class GameScreen {
   // ---------- sobreposições ----------
   private renderOverlay(): void {
     const v = this.view!;
+    window.clearTimeout(this.resultTimer);
+    if (v.phase === 'ended' && this.busy()) {
+      // deixa a última jogada aparecer na mesa antes do placar
+      clear(this.overlay);
+      this.resultTimer = window.setTimeout(() => this.renderOverlay(), Math.max(0, this.busyUntil - performance.now()) + 700);
+      return;
+    }
     clear(this.overlay);
     if (v.phase === 'lobby') this.overlay.append(this.lobbyPanel(v));
     else if (v.phase === 'ended') this.overlay.append(this.resultPanel(v));
@@ -1117,6 +1125,7 @@ export class GameScreen {
     this.offPwa();
     this.closeSeats();
     this.b.leave();
+    window.clearTimeout(this.resultTimer);
     this.stopTurnAlert();
     this.rtc?.close();
     this.scene.dispose();
